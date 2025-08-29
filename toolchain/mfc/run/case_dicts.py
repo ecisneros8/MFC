@@ -374,10 +374,16 @@ for cmp in ["x", "y", "z"]:
         SIMULATION[f'{var}_{cmp}'] = ParamType.REAL
     SIMULATION[f'bf_{cmp}'] = ParamType.LOG
 
-
     for prepend in ["domain%beg", "domain%end"]:
         SIMULATION[f"{cmp}_{prepend}"] = ParamType.REAL
 
+SIMULATION[f'spatial_bf'] = ParamType.LOG
+SIMULATION[f'spbf_amp'] = ParamType.REAL
+SIMULATION[f'spbf_freq'] = ParamType.REAL
+SIMULATION[f'spbf_center'] = ParamType.REAL
+SIMULATION[f'spbf_conv_vel'] = ParamType.REAL
+SIMULATION[f'spbf_sigma'] = ParamType.REAL
+        
 for probe_id in range(1,10+1):
     for cmp in ["x", "y", "z"]:
         SIMULATION[f'probe({probe_id})%{cmp}'] = ParamType.REAL

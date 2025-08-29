@@ -616,6 +616,11 @@ contains
             @:ALLOCATE(nbub(0:m, 0:n, 0:p))
         end if
 
+	if (spatial_bf) then
+	   @:ALLOCATE(spatial_bf_x(0:m, 0:n, 0:p))
+	   @:ALLOCATE(spatial_bf_y(0:m, 0:n, 0:p))
+	end if
+
     end subroutine s_initialize_rhs_module
 
     impure subroutine s_compute_rhs(q_cons_vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg, stage)

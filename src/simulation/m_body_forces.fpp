@@ -21,8 +21,9 @@ module m_body_forces
               s_initialize_body_forces_module, &
               s_finalize_body_forces_module
 
+    integer, parameter :: spbf_num_freq = 8
+    real(wp), allocatable, dimension(:) :: freq, phase
     real(wp), allocatable, dimension(:, :, :) :: rhoM
-    $:GPU_DECLARE(create='[rhoM]')
 
 contains
 
@@ -30,6 +31,10 @@ contains
     !! densities in each grid cell
     impure subroutine s_initialize_body_forces_module
 
+        integer :: f !< frequency iterator
+	real(wp) :: rf, rp
+    	real(wp), parameter :: pi = 4._wp * atan(1._wp)
+    
         ! Simulation is at least 2D
         if (n > 0) then
             ! Simulation is 3D
@@ -50,6 +55,21 @@ contains
                 0:0))
         end if
 
+	! Initialize the parameters for the body force with spatial dependence
+	if (spatial_bf) then
+		@:ALLOCATE(freq(spbf_num_freq), phase(spbf_num_freq))
+		write(*, *) '---', spbf_amp, spbf_freq, spbf_center, spbf_conv_vel, spbf_sigma
+		do f = 1, spbf_num_freq
+	   	   call random_number(rf)
+	   	   call random_number(rp)
+	  	   rf = rf - 0.5 * 1._wp
+	   	   rp = 2._wp * pi * rp 
+	   	   freq(f) = 0.25 * spbf_freq * (f * 1._wp + rf) * pi
+		   phase(f) = rp
+		enddo
+		write(*, *) freq(:)
+		write(*, *) phase(:)
+	endif
     end subroutine s_initialize_body_forces_module
 
     !> This subroutine computes the acceleration at time t
@@ -70,6 +90,45 @@ contains
         $:GPU_UPDATE(device='[accel_bf]')
 
     end subroutine s_compute_acceleration
+
+    !> This routine applies the body force of Wei & Freund (JFM, 2005)
+    subroutine s_compute_body_force_with_spatial_support(t)
+
+
+        real(wp), intent(in) :: t
+	real(wp) :: support !< spatial support
+	real(wp) :: theta_x, theta_y, pre_fac !< auxiliary variables
+	integer :: f !< frequency iterator
+	integer :: i, j, k, l !< standard iterators
+
+	$:GPU_PARALLEL_LOOP(collapse=4)
+	do l = 0, p
+	   do k = 0, n
+	      do j = 0, m
+	         support = exp(-spbf_sigma * &
+		 	   ((x_cc(j) - spbf_center)**2 + y_cc(k)**2))
+		 spatial_bf_x(j, k, l) = 0._wp
+		 spatial_bf_y(j, k, l) = 0._wp
+		 do f = 1, spbf_num_freq
+		    pre_fac = (freq(f) / spbf_conv_vel)
+		    theta_x = pre_fac * &
+		    	      (x_cc(j) - spbf_center - spbf_conv_vel * t) + &
+			      phase(f)
+		    theta_y = (freq(f) / spbf_conv_vel) * y_cc(k) + phase(f)
+		    spatial_bf_x(j, k, l) = spatial_bf_x(j, k, l) + &
+		     		      	    spbf_amp * support * ( &
+					    pre_fac * cos(theta_x) * sin(theta_y) - &
+					    2 * spbf_sigma * (x_cc(j) - spbf_center) * &
+					    sin(theta_x) * sin(theta_y))
+		     spatial_bf_y(j, k, l) = spatial_bf_y(j, k, l) - &
+		     		     	     spbf_amp * support * ( &
+					     pre_fac * sin(theta_x) * cos(theta_y) - &
+					     spbf_sigma * y_cc(k) * sin(theta_x) * sin(theta_y))
+		 end do
+	      end do
+	   end do
+	end do
+    end subroutine s_compute_body_force_with_spatial_support
 
     !> This subroutine calculates the mixture density at each cell
     !! center
@@ -106,7 +165,14 @@ contains
 
         integer :: i, j, k, l !< Loop variables
 
-        call s_compute_acceleration(mytime)
+	if (bf_x .or. bf_y .or. bf_z) then
+	        call s_compute_acceleration(mytime)
+	endif
+
+	if (spatial_bf) then
+		call s_compute_body_force_with_spatial_support(mytime)
+	endif
+
         call s_compute_mixture_density(q_cons_vf)
 
         $:GPU_PARALLEL_LOOP(collapse=4)
@@ -119,6 +185,22 @@ contains
                 end do
             end do
         end do
+
+	if (spatial_bf) then
+
+	   $:GPU_PARALLEL_LOOP(collapse=3)
+	   do l = 0, p
+	      do k = 0, n
+	      	 do j = 0, m
+		    rhs_vf(momxb)%sf(j, k, l) = rhs_vf(momxb)%sf(j, k, l) + &
+		    			      	rhoM(j, k, l) * spatial_bf_x(j, k, l)
+		    rhs_vf(momxb + 1)%sf(j, k, l) = rhs_vf(momxb + 1)%sf(j, k, l) + &
+		    		   	       	    rhoM(j, k, l) * spatial_bf_y(j, k, l)
+		    ! write(*, *) j, k, l, spatial_bf_x(j, k, l)
+		 enddo
+	      enddo
+	   enddo
+	endif
 
         if (bf_x) then ! x-direction body forces
 
