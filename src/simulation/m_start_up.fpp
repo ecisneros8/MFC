@@ -180,8 +180,7 @@ contains
             palpha_eps, ptgalpha_eps, &
             file_per_process, sigma, &
             pi_fac, adv_n, adap_dt, adap_dt_tol, adap_dt_max_iters, &
-	    spatial_bf, spbf_amp, spbf_freq, spbf_xc, spbf_yc, spbf_conv_vel, spbf_sigma, &
-            bf_x, bf_y, bf_z, &
+            spatial_bf, bf_spatial_support, bf_x, bf_y, bf_z, &
             k_x, k_y, k_z, w_x, w_y, w_z, p_x, p_y, p_z, &
             g_x, g_y, g_z, n_start, t_save, t_stop, &
             cfl_adap_dt, cfl_const_dt, cfl_target, &
@@ -213,7 +212,7 @@ contains
 
             close (1)
 
-            if ((bf_x) .or. (bf_y) .or. (bf_z) .or. spatial_bf) then
+            if ((bf_x) .or. (bf_y) .or. (bf_z) .or. (bf_spatial_support)) then
                 bodyForces = .true.
             endif
 

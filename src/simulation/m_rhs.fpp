@@ -616,9 +616,9 @@ contains
             @:ALLOCATE(nbub(0:m, 0:n, 0:p))
         end if
 
-	if (spatial_bf) then
-	   @:ALLOCATE(spatial_bf_x(0:m, 0:n, 0:p))
-	   @:ALLOCATE(spatial_bf_y(0:m, 0:n, 0:p))
+	if (bf_spatial_support) then
+	   @:ALLOCATE(spbf_source_x(0:m, 0:n, 0:p))
+	   @:ALLOCATE(spbf_source_y(0:m, 0:n, 0:p))
 	end if
 
     end subroutine s_initialize_rhs_module

@@ -207,16 +207,12 @@ module m_global_parameters
     real(wp), dimension(3) :: accel_bf
     $:GPU_DECLARE(create='[accel_bf]')
 
-    logical :: spatial_bf !< body force with spatial support
+    logical :: bf_spatial_support !< body force with spatial support
     !< amplitude, frequency, central coordinate, convective velocity for body force with spatial support
-    real(wp) :: spbf_amp
-    real(wp) :: spbf_freq
-    real(wp) :: spbf_xc, spbf_yc
-    real(wp) :: spbf_conv_vel
-    real(wp) :: spbf_sigma
-    real(wp), allocatable, dimension(:, :, :) :: spatial_bf_x
-    real(wp), allocatable, dimension(:, :, :) :: spatial_bf_y
-    $:GPU_DECLARE(create='[spatial_bf_x,spatial_bf_y]')
+    type(spbf_parameters) :: spatial_bf
+    real(wp), allocatable, dimension(:, :, :) :: spbf_source_x
+    real(wp), allocatable, dimension(:, :, :) :: spbf_source_y
+    $:GPU_DECLARE(create='[spatial_bf,spbf_source_x,spbf_source_y]')
 
     integer :: cpu_start, cpu_end, cpu_rate
 
