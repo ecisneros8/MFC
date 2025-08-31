@@ -666,6 +666,17 @@ contains
             #:endfor
         #:endfor
 
+	bf_spatial_support = .false.
+	spatial_bf%amp = 0._wp
+	spatial_bf%x_centroid = 0._wp
+	spatial_bf%y_centroid = 0._wp
+	spatial_bf%conv_vel = 0._wp
+	spatial_bf%sigma = 0._wp
+	do i = 1, 8
+	   spatial_bf%freq(i) = 0._wp
+	   spatial_bf%phase(i) = 0._wp
+	enddo
+
         x_domain%beg = dflt_int; x_domain%end = dflt_int
         y_domain%beg = dflt_int; y_domain%end = dflt_int
         z_domain%beg = dflt_int; z_domain%end = dflt_int
