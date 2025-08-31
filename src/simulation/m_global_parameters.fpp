@@ -211,7 +211,7 @@ module m_global_parameters
     !< amplitude, frequency, central coordinate, convective velocity for body force with spatial support
     real(wp) :: spbf_amp
     real(wp) :: spbf_freq
-    real(wp) :: spbf_center
+    real(wp) :: spbf_xc, spbf_yc
     real(wp) :: spbf_conv_vel
     real(wp) :: spbf_sigma
     real(wp), allocatable, dimension(:, :, :) :: spatial_bf_x

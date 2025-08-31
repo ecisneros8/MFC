@@ -58,7 +58,7 @@ contains
 	! Initialize the parameters for the body force with spatial dependence
 	if (spatial_bf) then
 		@:ALLOCATE(freq(spbf_num_freq), phase(spbf_num_freq))
-		write(*, *) '---', spbf_amp, spbf_freq, spbf_center, spbf_conv_vel, spbf_sigma
+		write(*, *) '---', spbf_amp, spbf_freq, spbf_xc, spbf_yc, spbf_conv_vel, spbf_sigma
 		do f = 1, spbf_num_freq
 	   	   call random_number(rf)
 	   	   call random_number(rp)
@@ -106,24 +106,25 @@ contains
 	   do k = 0, n
 	      do j = 0, m
 	         support = exp(-spbf_sigma * &
-		 	   ((x_cc(j) - spbf_center)**2 + y_cc(k)**2))
+		 	   ((x_cc(j) - spbf_xc)**2 + (y_cc(k) - spbf_yc)**2))
 		 spatial_bf_x(j, k, l) = 0._wp
 		 spatial_bf_y(j, k, l) = 0._wp
 		 do f = 1, spbf_num_freq
 		    pre_fac = (freq(f) / spbf_conv_vel)
 		    theta_x = pre_fac * &
-		    	      (x_cc(j) - spbf_center - spbf_conv_vel * t) + &
+		    	      (x_cc(j) - spbf_xc - spbf_conv_vel * t) + &
 			      phase(f)
 		    theta_y = (freq(f) / spbf_conv_vel) * y_cc(k) + phase(f)
 		    spatial_bf_x(j, k, l) = spatial_bf_x(j, k, l) + &
 		     		      	    spbf_amp * support * ( &
 					    pre_fac * cos(theta_x) * sin(theta_y) - &
-					    2 * spbf_sigma * (x_cc(j) - spbf_center) * &
+					    2 * spbf_sigma * (x_cc(j) - spbf_xc) * &
 					    sin(theta_x) * sin(theta_y))
 		     spatial_bf_y(j, k, l) = spatial_bf_y(j, k, l) - &
 		     		     	     spbf_amp * support * ( &
 					     pre_fac * sin(theta_x) * cos(theta_y) - &
-					     spbf_sigma * y_cc(k) * sin(theta_x) * sin(theta_y))
+					     2 * spbf_sigma * (y_cc(k) - spbf_yc) * &
+					     sin(theta_x) * sin(theta_y))
 		 end do
 	      end do
 	   end do

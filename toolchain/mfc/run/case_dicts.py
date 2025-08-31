@@ -380,7 +380,8 @@ for cmp in ["x", "y", "z"]:
 SIMULATION[f'spatial_bf'] = ParamType.LOG
 SIMULATION[f'spbf_amp'] = ParamType.REAL
 SIMULATION[f'spbf_freq'] = ParamType.REAL
-SIMULATION[f'spbf_center'] = ParamType.REAL
+SIMULATION[f'spbf_xc'] = ParamType.REAL
+SIMULATION[f'spbf_yc'] = ParamType.REAL
 SIMULATION[f'spbf_conv_vel'] = ParamType.REAL
 SIMULATION[f'spbf_sigma'] = ParamType.REAL
         
