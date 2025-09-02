@@ -73,7 +73,7 @@ contains
 
 	   spbf_amp = spatial_bf%amp
 	   spbf_xc = spatial_bf%x_centroid
-	   spbf_yc = spatial_bf%x_centroid
+	   spbf_yc = spatial_bf%y_centroid
 	   spbf_conv_vel = spatial_bf%conv_vel
 	   spbf_sigma = spatial_bf%sigma
 
@@ -107,7 +107,6 @@ contains
     !> This routine applies the body force of Wei & Freund (JFM, 2005)
     subroutine s_compute_body_force_with_spatial_support(t)
 
-
         real(wp), intent(in) :: t
 	real(wp) :: support !< spatial support
 	real(wp) :: theta_x, theta_y, pre_fac !< auxiliary variables
@@ -127,16 +126,16 @@ contains
 		    theta_x = pre_fac * &
 		    	      (x_cc(j) - spbf_xc - spbf_conv_vel * t) + &
 			      phase(f)
-		    theta_y = (freq(f) / spbf_conv_vel) * y_cc(k) + phase(f)
+		    theta_y = pre_fac * (y_cc(k) - spbf_yc) + phase(f)
 		    spbf_source_x(j, k, l) = spbf_source_x(j, k, l) + &
 		     		      	    spbf_amp * support * ( &
-					    pre_fac * cos(theta_x) * sin(theta_y) - &
-					    2 * spbf_sigma * (x_cc(j) - spbf_xc) * &
+					    pre_fac * sin(theta_x) * cos(theta_y) - &
+					    2 * spbf_sigma * (y_cc(k) - spbf_yc) * &
 					    sin(theta_x) * sin(theta_y))
 		     spbf_source_y(j, k, l) = spbf_source_y(j, k, l) - &
 		     		     	     spbf_amp * support * ( &
-					     pre_fac * sin(theta_x) * cos(theta_y) - &
-					     2 * spbf_sigma * (y_cc(k) - spbf_yc) * &
+					     pre_fac * cos(theta_x) * sin(theta_y) - &
+					     2 * spbf_sigma * (x_cc(j) - spbf_xc) * &
 					     sin(theta_x) * sin(theta_y))
 		 end do
 	      end do
@@ -207,9 +206,9 @@ contains
 	      do k = 0, n
 	      	 do j = 0, m
 		    rhs_vf(momxb)%sf(j, k, l) = rhs_vf(momxb)%sf(j, k, l) + &
-		    			      	rhoM(j, k, l) * spbf_source_x(j, k, l)
+		    			      	spbf_source_x(j, k, l)
 		    rhs_vf(momxb + 1)%sf(j, k, l) = rhs_vf(momxb + 1)%sf(j, k, l) + &
-		    		   	       	    rhoM(j, k, l) * spbf_source_y(j, k, l)
+		    		   	       	    spbf_source_y(j, k, l)
 		    ! write(*, *) j, k, l, spatial_bf_x(j, k, l)
 		 enddo
 	      enddo

@@ -237,14 +237,16 @@ contains
             #:endfor
         end do
 
+	call MPI_BCAST(bf_spatial_support, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
 	#:for VAR in ['amp','x_centroid','y_centroid','sigma','conv_vel']
 	      call MPI_BCAST(spatial_bf%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
 	#:endfor
-
-	do j = 1, 8
-	   call MPI_BCAST(spatial_bf%freq(j), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
-	   call MPI_BCAST(spatial_bf%phase(j), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
-	enddo
+	call MPI_BCAST(spatial_bf%freq, 8, mpi_p, 0, MPI_COMM_WORLD, ierr)
+	call MPI_BCAST(spatial_bf%phase, 8, mpi_p, 0, MPI_COMM_WORLD, ierr)
+	! do j = 1, 8
+	!    call MPI_BCAST(spatial_bf%freq(j), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
+	!    call MPI_BCAST(spatial_bf%phase(j), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
+	! enddo
 
         ! NVIDIA UVM variables
         call MPI_BCAST(nv_uvm_out_of_core, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)

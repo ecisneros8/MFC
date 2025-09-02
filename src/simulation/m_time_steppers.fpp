@@ -911,7 +911,9 @@ contains
             end do
         end if
 
-        if (bodyForces) call s_apply_bodyforces(q_cons_ts(dest)%vf, q_prim_vf, rhs_vf, dt)
+        if (bodyForces) then
+	   call s_apply_bodyforces(q_cons_ts(dest)%vf, q_prim_vf, rhs_vf, dt)
+	endif
 
         if (grid_geometry == 3) call s_apply_fourier_filter(q_cons_ts(dest)%vf)
 

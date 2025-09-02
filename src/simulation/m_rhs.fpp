@@ -616,10 +616,10 @@ contains
             @:ALLOCATE(nbub(0:m, 0:n, 0:p))
         end if
 
-	if (bf_spatial_support) then
-	   @:ALLOCATE(spbf_source_x(0:m, 0:n, 0:p))
-	   @:ALLOCATE(spbf_source_y(0:m, 0:n, 0:p))
-	end if
+	@:ALLOCATE(spbf_source_x(-buff_size:buff_size + m, &
+		-buff_size:buff_size + n, 0:0))
+	@:ALLOCATE(spbf_source_y(-buff_size:buff_size + m, &
+		-buff_size:buff_size + n, 0:0))
 
     end subroutine s_initialize_rhs_module
 
@@ -2021,6 +2021,7 @@ contains
             @:DEALLOCATE(flux_n, flux_src_n, flux_gsrc_n)
         end if
 
+	@:DEALLOCATE(spbf_source_x, spbf_source_y)
     end subroutine s_finalize_rhs_module
 
 end module m_rhs
