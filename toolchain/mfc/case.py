@@ -7,6 +7,7 @@ from .printer import cons
 from .state import ARG
 from .run   import case_dicts
 
+
 QPVF_IDX_VARS = {
     'alpha_rho': 'contxb', 'vel'  : 'momxb',         'pres': 'E_idx', 
     'alpha':     'advxb',  'tau_e': 'stress_idx%beg', 'Y':   'chemxb',
@@ -141,7 +142,7 @@ class Case:
                     'r':     f'patch_icpp({pid})%radius',  'eps':   f'patch_icpp({pid})%epsilon', 'beta':  f'patch_icpp({pid})%beta',
                     'tau_e': f'patch_icpp({pid})%tau_e',   'radii': f'patch_icpp({pid})%radii',
 
-                    'e' : f'{math.e}', 'pi': f'{math.pi}',
+                    'e' : f'{math.e}',
                 }.get(match.group(), match.group())
 
             lines = []
@@ -234,7 +235,7 @@ class Case:
             igr_pres_lim = 1 if self.params.get("igr_pres_lim", 'F') == 'T' else 0
 
             # Throw error if wenoz_q is required but not set
-            return f"""\
+            out = f"""\
 #:set MFC_CASE_OPTIMIZATION = {ARG("case_optimization")}
 #:set recon_type            = {recon_type}
 #:set weno_order            = {weno_order}
@@ -262,10 +263,11 @@ class Case:
 #:set viscous               = {viscous}
 """
 
-        return """\
-! This file is purposefully empty. It is only important for builds that make use
-! of --case-optimization.
-"""
+        else:
+            out = ""
+
+        # We need to also include the pre_processing includes so that common subroutines have access to the @:analytical function
+        return out + f"\n{self.__get_pre_fpp(print)}"
 
     def get_fpp(self, target, print = True) -> str:
         def _prepend() -> str:
@@ -277,7 +279,7 @@ class Case:
             return "! This file is purposefully empty."
 
         result = {
-            "pre_process" : self.__get_pre_fpp,
+            "pre_process"      : self.__get_pre_fpp,
             "simulation"  : self.__get_sim_fpp,
         }.get(build.get_target(target).name, _default)(print)
 

@@ -3,6 +3,7 @@ import os, typing, itertools
 
 from mfc   import common
 from .case import Nt, define_case_d, define_case_f, CaseGeneratorStack, TestCaseBuilder
+from ..state   import ARG
 
 def get_bc_mods(bc: int, dimInfo):
     params = {}
@@ -187,21 +188,23 @@ def list_cases() -> typing.List[TestCaseBuilder]:
             stack.pop()
 
     def alter_riemann_solvers(num_fluids):
-        for riemann_solver in [1, 2]:
+        for riemann_solver in [1, 5, 2]:
             stack.push(f"riemann_solver={riemann_solver}", {'riemann_solver': riemann_solver})
 
             cases.append(define_case_d(stack, "mixture_err",   {'mixture_err': 'T'}))
-            cases.append(define_case_d(stack, "avg_state=1",   {'avg_state':   1}))
-            cases.append(define_case_d(stack, "wave_speeds=2", {'wave_speeds': 2}))
 
-            if riemann_solver == 2:
-                cases.append(define_case_d(stack, "model_eqns=3", {'model_eqns': 3}))
+            if riemann_solver in (1, 2):
+                cases.append(define_case_d(stack, "avg_state=1",   {'avg_state':   1}))
+                cases.append(define_case_d(stack, "wave_speeds=2", {'wave_speeds': 2}))
 
-            if num_fluids == 2:
                 if riemann_solver == 2:
-                    cases.append(define_case_d(stack, 'alt_soundspeed', {'alt_soundspeed': 'T'}))
+                    cases.append(define_case_d(stack, "model_eqns=3", {'model_eqns': 3}))
 
-                cases.append(define_case_d(stack, 'mpp_lim', {'mpp_lim': 'T'}))
+                if num_fluids == 2:
+                    if riemann_solver == 2:
+                        cases.append(define_case_d(stack, 'alt_soundspeed', {'alt_soundspeed': 'T'}))
+
+                    cases.append(define_case_d(stack, 'mpp_lim', {'mpp_lim': 'T'}))
 
             stack.pop()
 
@@ -254,6 +257,7 @@ def list_cases() -> typing.List[TestCaseBuilder]:
 
                 cases.append(define_case_d(stack, "",             {'weno_Re_flux': 'F'}))
                 cases.append(define_case_d(stack, "weno_Re_flux", {'weno_Re_flux': 'T'}))
+                cases.append(define_case_d(stack, "riemann_solver=5", {'riemann_solver':5}))
 
                 for weno_Re_flux in ['T']:
                     stack.push("weno_Re_flux" if weno_Re_flux == 'T' else '', {'weno_Re_flux' : 'T'})
@@ -275,6 +279,7 @@ def list_cases() -> typing.List[TestCaseBuilder]:
 
                 cases.append(define_case_d(stack, "",             {'weno_Re_flux': 'F'}))
                 cases.append(define_case_d(stack, "weno_Re_flux", {'weno_Re_flux': 'T'}))
+                cases.append(define_case_d(stack, "riemann_solver=5", {'riemann_solver':5}))
                 for weno_Re_flux in ['T']:
                     stack.push("weno_Re_flux" if weno_Re_flux == 'T' else '', {'weno_Re_flux' : 'T'})
                     cases.append(define_case_d(stack, "weno_avg", {'weno_avg': 'T'}))
@@ -362,10 +367,12 @@ def list_cases() -> typing.List[TestCaseBuilder]:
     def alter_ppn(dimInfo):
         if len(dimInfo[0]) == 3:
             cases.append(define_case_d(stack, '2 MPI Ranks', {'m': 29, 'n': 29, 'p': 49}, ppn=2))
-            cases.append(define_case_d(stack, '2 MPI Ranks -> RDMA MPI', {'m': 29, 'n': 29, 'p': 49, 'rdma_mpi': 'T'}, ppn=2))
+            if ARG("rdma_mpi"):
+                cases.append(define_case_d(stack, '2 MPI Ranks -> RDMA MPI', {'m': 29, 'n': 29, 'p': 49, 'rdma_mpi': 'T'}, ppn=2))
         else:
             cases.append(define_case_d(stack, '2 MPI Ranks', {}, ppn=2))
-            cases.append(define_case_d(stack, '2 MPI Ranks -> RDMA MPI', {'rdma_mpi': 'T'}, ppn=2))
+            if ARG("rdma_mpi"):
+                cases.append(define_case_d(stack, '2 MPI Ranks -> RDMA MPI', {'rdma_mpi': 'T'}, ppn=2))
 
     def alter_ib(dimInfo, six_eqn_model=False):
         for slip in [True, False]:
@@ -511,8 +518,9 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 'fluid_pp(1)%ss' : 0.07275,'fluid_pp(1)%pv' : 2338.8,'fluid_pp(1)%gamma_v' : 1.33,
                 'fluid_pp(1)%M_v' : 18.02,'fluid_pp(1)%mu_v' : 8.816e-06,'fluid_pp(1)%k_v' : 0.019426,
                 'fluid_pp(2)%gamma_v' : 1.4,'fluid_pp(2)%M_v' : 28.97,'fluid_pp(2)%mu_v' : 1.8e-05,
-                'fluid_pp(2)%k_v' : 0.02556, 'patch_icpp(1)%alpha_rho(1)': 0.96, 'patch_icpp(1)%alpha(1)':
-                4e-02, 'patch_icpp(2)%alpha_rho(1)': 0.96, 'patch_icpp(2)%alpha(1)': 4e-02,  'patch_icpp(3)%alpha_rho(1)': 0.96,
+                'fluid_pp(2)%k_v' : 0.02556, 'fluid_pp(2)%D_v' : 0.242e-4, 
+                'patch_icpp(1)%alpha_rho(1)': 0.96, 'patch_icpp(1)%alpha(1)': 4e-02, 
+                'patch_icpp(2)%alpha_rho(1)': 0.96, 'patch_icpp(2)%alpha(1)': 4e-02,  'patch_icpp(3)%alpha_rho(1)': 0.96,
                 'patch_icpp(3)%alpha(1)': 4e-02, 'patch_icpp(1)%pres': 1.0, 'patch_icpp(2)%pres': 1.0,
                 'patch_icpp(3)%pres': 1.0, 'acoustic(1)%support': 1, 'acoustic(1)%wavelength': 0.25
             })
@@ -826,44 +834,59 @@ def list_cases() -> typing.List[TestCaseBuilder]:
             for _ in range(6):
                 stack.pop()
 
-    def alter_lag_bubbles():
+    def alter_lag_bubbles(dimInfo):
         # Lagrangian bubbles
-        for adap_dt in ['F', 'T']:
-            for couplingMethod in [1, 2]:
-                stack.push("Lagrange Bubbles", {"bubbles_lagrange": 'T',
-                    'dt': 1e-06, 'lag_params%pressure_corrector': 'T', 'bubble_model': 2,
-                    'num_fluids': 2, 'lag_params%heatTransfer_model': 'T', 'lag_params%massTransfer_model': 'T',
-                    'fluid_pp(1)%gamma' : 0.16, 'fluid_pp(1)%pi_inf': 3515.0, 'fluid_pp(2)%gamma': 2.5,
-                    'fluid_pp(2)%pi_inf': 0.0, 'fluid_pp(1)%mul0' : 0.001002, 'fluid_pp(1)%ss' : 0.07275,
-                    'fluid_pp(1)%pv' : 2338.8,'fluid_pp(1)%gamma_v' : 1.33, 'fluid_pp(1)%M_v' : 18.02,
-                    'fluid_pp(1)%mu_v' : 8.816e-06,'fluid_pp(1)%k_v' : 0.019426, 'fluid_pp(1)%cp_v' : 2.1e3,
-                    'fluid_pp(2)%gamma_v' : 1.4,'fluid_pp(2)%M_v' : 28.97, 'fluid_pp(2)%mu_v' : 1.8e-05,
-                    'fluid_pp(2)%k_v' : 0.02556, 'fluid_pp(2)%cp_v' : 1.e3, 'patch_icpp(1)%alpha_rho(1)': 0.96,
-                    'patch_icpp(1)%alpha(1)': 4e-02, 'patch_icpp(1)%alpha_rho(2)': 0., 'patch_icpp(1)%alpha(2)': 0.,
-                    'patch_icpp(2)%alpha_rho(1)': 0.96, 'patch_icpp(2)%alpha(1)': 4e-02, 'patch_icpp(2)%alpha_rho(2)': 0.,
-                    'patch_icpp(2)%alpha(2)': 0.,  'patch_icpp(3)%alpha_rho(1)': 0.96, 'patch_icpp(3)%alpha(1)': 4e-02,
-                    'patch_icpp(3)%alpha_rho(2)': 0., 'patch_icpp(3)%alpha(2)': 0.,'patch_icpp(1)%pres': 1.0,
-                    'patch_icpp(2)%pres': 1.0, 'patch_icpp(3)%pres': 1.0, 'acoustic_source': 'T', 'acoustic(1)%loc(2)': 0.5,
-                    'acoustic(1)%wavelength': 0.25, 'acoustic(1)%support': 3, 'acoustic(1)%height': 1e10,
-                    'acoustic(1)%mag': 2e+04, 't_step_start': 0, 't_step_stop': 50, 't_step_save': 50
-                })
-                if couplingMethod==1:
-                    stack.push('One-way Coupling',{'lag_params%solver_approach': 1})
-                else:
-                    stack.push('Two-way Coupling',{'lag_params%solver_approach': 2})
+        if len(dimInfo[0]) > 1:
+            for adap_dt in ['F', 'T']:
+                for couplingMethod in [1, 2]:
+                    stack.push("Lagrange Bubbles", {"bubbles_lagrange": 'T',
+                        'dt': 1e-06, 'lag_params%pressure_corrector': 'T', 'bubble_model': 2,
+                        'num_fluids': 2, 'lag_params%heatTransfer_model': 'T', 'lag_params%massTransfer_model': 'T',
+                        'fluid_pp(1)%gamma' : 0.16, 'fluid_pp(1)%pi_inf': 3515.0, 'fluid_pp(2)%gamma': 2.5,
+                        'fluid_pp(2)%pi_inf': 0.0, 'fluid_pp(1)%mul0' : 0.001002, 'fluid_pp(1)%ss' : 0.07275,
+                        'fluid_pp(1)%pv' : 2338.8,'fluid_pp(1)%gamma_v' : 1.33, 'fluid_pp(1)%M_v' : 18.02,
+                        'fluid_pp(1)%mu_v' : 8.816e-06,'fluid_pp(1)%k_v' : 0.019426, 'fluid_pp(1)%cp_v' : 2.1e3,
+                        'fluid_pp(2)%gamma_v' : 1.4,'fluid_pp(2)%M_v' : 28.97, 'fluid_pp(2)%mu_v' : 1.8e-05,
+                        'fluid_pp(2)%k_v' : 0.02556, 'fluid_pp(2)%cp_v' : 1.e3, 'fluid_pp(2)%D_v' : 2.5e-5, 
+                        'patch_icpp(1)%alpha_rho(1)': 0.96,
+                        'patch_icpp(1)%alpha(1)': 4e-02, 'patch_icpp(1)%alpha_rho(2)': 0., 'patch_icpp(1)%alpha(2)': 0.,
+                        'patch_icpp(2)%alpha_rho(1)': 0.96, 'patch_icpp(2)%alpha(1)': 4e-02, 'patch_icpp(2)%alpha_rho(2)': 0.,
+                        'patch_icpp(2)%alpha(2)': 0.,  'patch_icpp(3)%alpha_rho(1)': 0.96, 'patch_icpp(3)%alpha(1)': 4e-02,
+                        'patch_icpp(3)%alpha_rho(2)': 0., 'patch_icpp(3)%alpha(2)': 0.,'patch_icpp(1)%pres': 1.0,
+                        'patch_icpp(2)%pres': 1.0, 'patch_icpp(3)%pres': 1.0, 'acoustic_source': 'T', 'acoustic(1)%loc(2)': 0.5,
+                        'acoustic(1)%wavelength': 0.25, 'acoustic(1)%mag': 2e+04, 't_step_start': 0, 't_step_stop': 50,
+                        't_step_save': 50, 'lag_txt_wrt': "T", 'lag_header': "T", 'lag_db_wrt': "T", 'lag_id_wrt': "T",
+                        'lag_pos_wrt': "T", 'lag_pos_prev_wrt': "T", 'lag_vel_wrt': "T", 'lag_rad_wrt': "T",
+                        'lag_rvel_wrt': "T",'lag_r0_wrt': "T", 'lag_rmax_wrt': "T", 'lag_rmin_wrt': "T",
+                        'lag_dphidt_wrt': "T", 'lag_pres_wrt': "T", 'lag_mv_wrt': "T", 'lag_mg_wrt': "T",
+                        'lag_betaT_wrt': "T", 'lag_betaC_wrt': "T", 'lag_params%write_bubbles': "T",
+                        'lag_params%write_bubbles_stats': "T"
+                    })
 
-                if adap_dt=='F':
-                    stack.push('',{})
-                else:
-                    stack.push('adap_dt=T',{'adap_dt': 'T'})
+                    if len(dimInfo[0]) == 2:
+                        stack.push("", {'acoustic(1)%support': 2})
+                    else:
+                        stack.push("", {'acoustic(1)%support': 3, 'acoustic(1)%height': 1e10})
 
-                cases.append(define_case_d(stack, '', {}))
+                    if couplingMethod==1:
+                        stack.push('One-way Coupling',{'lag_params%solver_approach': 1})
+                    else:
+                        stack.push('Two-way Coupling',{'lag_params%solver_approach': 2})
 
-                stack.pop()
+                    if adap_dt=='F':
+                        stack.push('',{})
+                    else:
+                        stack.push('adap_dt=T',{'adap_dt': 'T'})
 
-                stack.pop()
+                    cases.append(define_case_d(stack, '', {}))
 
-                stack.pop()
+                    stack.pop()
+
+                    stack.pop()
+
+                    stack.pop()
+
+                    stack.pop()
 
     def alter_elliptic_smoothing():
         # Elliptic Smoothing
@@ -959,7 +982,7 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 alter_2d()
             if len(dimInfo[0]) == 3:
                 alter_3d()
-                alter_lag_bubbles()
+            alter_lag_bubbles(dimInfo)
             alter_ppn(dimInfo)
             stack.push('', {'dt': [1e-07, 1e-06, 1e-06][len(dimInfo[0])-1]})
             alter_acoustic_src(dimInfo)
@@ -1000,7 +1023,9 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                            "3D_TaylorGreenVortex_analytical",
                            "3D_IGR_TaylorGreenVortex_nvidia",
                            "2D_backward_facing_step",
-                           "2D_forward_facing_step"]
+                           "2D_forward_facing_step",
+                           "1D_convergence",
+                           "3D_IGR_33jet"]
             if path in casesToSkip:
                 continue
             name = f"{path.split('_')[0]} -> Example -> {'_'.join(path.split('_')[1:])}"
@@ -1047,10 +1072,24 @@ def list_cases() -> typing.List[TestCaseBuilder]:
                 mods={
                     **common_mods,
                     'riemann_solver': riemann_solver,
-                    'chem_params%gamma_method': gamma_method
+                    'chem_params%gamma_method': gamma_method,
+                    'weno_order': 3, "mapped_weno": 'F', 'mp_weno': 'F'
                 },
-                override_tol=1
+                override_tol=10**(-10)
             ))
+
+        stack.push(f'1D -> Chemistry -> MultiComponent Diffusion', {'m': 200,
+                    'dt': 0.1e-06, 'num_patches': 1, 'num_fluids': 1, 'x_domain%beg': 0.0, 'x_domain%end': 0.05,
+                    'bc_x%beg': -1, 'bc_x%end': -1, 'weno_order': 5,'weno_eps': 1e-16, 'weno_avg': 'F',
+                    'mapped_weno': 'T', 'mp_weno': 'T','weno_Re_flux': 'F', 'riemann_solver': 2, 'wave_speeds': 1,
+                    'avg_state': 1,'chemistry': 'T', 'chem_params%diffusion': 'T','chem_params%reactions': 'F', 'chem_wrt_T' : 'T',
+                    'patch_icpp(1)%geometry': 1, 'patch_icpp(1)%hcid': 182, 'patch_icpp(1)%x_centroid': 0.05 / 2,
+		    'patch_icpp(1)%length_x': 0.05, 'patch_icpp(1)%vel(1)': '0', 'patch_icpp(1)%pres': 1.01325e5,  'patch_icpp(1)%alpha(1)': 1,
+                    'fluid_pp(1)%gamma': 1.0e00 / (1.9326e00 - 1.0e00),  'fluid_pp(1)%pi_inf': 0, 'cantera_file': 'h2o2.yaml', 't_step_start': 0, 't_step_stop': 50, 't_step_save': 50
+        })
+        cases.append(define_case_d(stack, '', {},override_tol=10**(-9)))
+
+        stack.pop()
 
     foreach_dimension()
 

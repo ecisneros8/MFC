@@ -68,6 +68,15 @@ For example, to run the `scaling` case in "weak-scaling" mode:
 
 ## Parameters
 
+## Feature Compatibility
+
+Before diving into parameter details, check the **[Feature Compatibility Guide](case_constraints.md)** to understand:
+- Which features work together (MHD, bubbles, phase change, etc.)
+- Common configuration patterns with copy-paste examples
+- Requirements for each model equation and Riemann solver
+
+💡 **Tip:** If you get a validation error, the compatibility guide explains what each parameter requires.
+
 There are multiple sets of parameters that must be specified in the python input file:
 1. [Runtime Parameters](#1-runtime)
 2. [Computational Domain Parameters](#2-computational-domain)
@@ -482,9 +491,9 @@ It is recommended to set `weno_eps` to $10^{-6}$ for WENO-JS, and to $10^{-40}$ 
 
 - `mp_weno` activates monotonicity preservation in the WENO reconstruction (MPWENO) such that the values of reconstructed variables do not reside outside the range spanned by WENO stencil ([Balsara and Shu, 2000](references.md); [Suresh and Huynh, 1997](references.md)).
 
-- `muscl_order` specifies the order of the MUSCL scheme that is used for spatial reconstruction of variables by an integer of 1, or 2, that corresponds to the 1st, and 2nd order respectively. When using `muscl_order = 2`, `muscl_lim` must be defined. 
+- `muscl_order` specifies the order of the MUSCL scheme that is used for spatial reconstruction of variables by an integer of 1, or 2, that corresponds to the 1st, and 2nd order respectively. When using `muscl_order = 2`, `muscl_lim` must be defined.
 
-- `muscl_lim` specifies the slope limiter that is used in 2nd order MUSCL Reconstruction by an integer from 1 through 5. 
+- `muscl_lim` specifies the slope limiter that is used in 2nd order MUSCL Reconstruction by an integer from 1 through 5.
 `muscl_lim = 1`, `2`, `3`, `4`, and `5` correspond to minmod, monotonized central, Van Albada, Van Leer, and SUPERBEE, respectively.
 
 - `int_comp` activates interface compression using THINC used in MUSCL Reconstruction, with control parameters (`ic_eps`, and `ic_beta`).
@@ -599,6 +608,24 @@ To restart the simulation from $k$-th time step, see [Restarting Cases](running.
 | `output_partial_domain` | Logical | Output part of the domain |
 | `[x,y,z]_output%beg` | Real    | Beginning of the output domain in the [x,y,z]-direction |
 | `[x,y,z]_output%end` | Real    | End of the output domain in the [x,y,z]-direction |
+| `lag_txt_wrt`        | Logical | Write Lagrangian bubble data to `.dat` files |
+| `lag_header`         | Logical | Write header to Lagrangian bubble `.dat` files |
+| `lag_db_wrt`         | Logical | Write Lagrangian bubble data to silo/hdf5 database files |
+| `lag_id_wrt`         | Logical | Add the global bubble idea to the database file |
+| `lag_pos_wrt`        | Logical | Add the bubble position to the database file |
+| `lag_pos_prev_wrt`   | Logical | Add the previous bubble position to the database file |
+| `lag_vel_wrt`        | Logical | Add the bubble translational velocity to the database file |
+| `lag_rad_wrt`        | Logical | Add the bubble radius to the database file |
+| `lag_rvel_wrt`       | Logical | Add the bubble radial velocity to the database file |
+| `lag_r0_wrt`         | Logical | Add the bubble initial radius to the database file |
+| `lag_rmax_wrt`       | Logical | Add the bubble maximum radius to the database file |
+| `lag_rmin_wrt`       | Logical | Add the bubble minimum radius to the database file |
+| `lag_dphidt_wrt`     | Logical | Add the bubble subgrid velocity potential to the database file |
+| `lag_pres_wrt`       | Logical | Add the bubble pressure to the database file |
+| `lag_mv_wrt`         | Logical | Add the bubble vapor mass to the database file |
+| `lag_mg_wrt`         | Logical | Add the bubble gas mass to the database file |
+| `lag_betaT_wrt`      | Logical | Add the bubble heat flux model coefficient to the database file |
+| `lag_betaC_wrt`      | Logical | Add the bubble mass flux model coefficient to the database file |
 
 The table lists formatted database output parameters. The parameters define variables that are outputted from simulation and file types and formats of data as well as options for post-processing.
 
@@ -628,7 +655,7 @@ If `file_per_process` is true, then pre_process, simulation, and post_process mu
 
 - `output_partial_domain` activates the output of part of the domain specified by `[x,y,z]_output%beg` and `[x,y,z]_output%end`.
 This is useful for large domains where only a portion of the domain is of interest.
-It is not supported when `precision = 1` and `format = 1`. 
+It is not supported when `precision = 1` and `format = 1`.
 It also cannot be enabled with `flux_wrt`, `heat_ratio_wrt`, `pres_inf_wrt`, `c_wrt`, `omega_wrt`, `ib`, `schlieren_wrt`, `qm_wrt`, or 'liutex_wrt'.
 
 ### 8. Acoustic Source {#acoustic-source}
@@ -727,6 +754,7 @@ Details of the transducer acoustic source model can be found in [Maeda and Colon
 | `mu_v` †	        | Real 		|	Viscosity |
 | `k_v` †	          | Real 		|	Thermal conductivity |
 | `cp_v` †	        | Real 		|	Specific heat capacity |
+| `D_v` †           | Real    | Vapor diffusivity in the gas |
 
 These options work only for gas-liquid two-component flows.
 Component indexes are required to be 1 for liquid and 2 for gas.
@@ -818,7 +846,6 @@ When ``polytropic = 'F'``, the gas compression is modeled as non-polytropic due 
 | `T0`                  | Real    | Reference temperature                                     |
 | `x0`                  | Real    | Reference length                                          |
 | `Thost`               | Real    | Temperature of the surrounding liquid (host)              |
-| `diffcoefvap`         | Real    | Vapor diffusivity in the gas                              |
 
 - `nBubs_glb` Total number of bubbles. Their initial conditions need to be specified in the ./input/lag_bubbles.dat file. See the example cases for additional information.
 

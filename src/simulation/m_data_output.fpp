@@ -74,7 +74,7 @@ module m_data_output
     real(wp) :: Rc_min !< Rc criterion maximum
     !> @}
 
-    type(scalar_field), allocatable, dimension(:) :: q_cons_temp
+    type(scalar_field), allocatable, dimension(:) :: q_cons_temp_ds
 
 contains
 
@@ -157,23 +157,15 @@ contains
         write (3, '(A)') ''; write (3, '(A)') ''
 
         ! Generating table header for the stability criteria to be outputted
-        if (cfl_dt) then
-            if (viscous) then
-                write (3, '(A)') '     Time-steps        dt     = Time         ICFL '// &
-                    'Max      VCFL Max        Rc Min       ='
-            else
-                write (3, '(A)') '            Time-steps                dt       Time '// &
-                    '               ICFL Max              '
-            end if
-        else
-            if (viscous) then
-                write (3, '(A)') '     Time-steps        Time         ICFL '// &
-                    'Max      VCFL Max        Rc Min        '
-            else
-                write (3, '(A)') '            Time-steps                Time '// &
-                    '               ICFL Max              '
-            end if
+        write (3, '(13X,A9,13X,A10,13X,A10,13X,A10)', advance="no") &
+            trim('Time-step'), trim('dt'), trim('Time'), trim('ICFL Max')
+
+        if (viscous) then
+            write (3, '(13X,A10,13X,A16)', advance="no") &
+                trim('VCFL Max'), trim('Rc Min')
         end if
+
+        write (3, *) ! new line
 
     end subroutine s_open_run_time_information_file
 
@@ -281,19 +273,20 @@ contains
         real(wp), dimension(num_fluids) :: alpha      !< Cell-avg. volume fraction
         real(wp) :: gamma      !< Cell-avg. sp. heat ratio
         real(wp) :: pi_inf     !< Cell-avg. liquid stiffness function
+        real(wp) :: qv         !< Cell-avg. internal energy reference value
         real(wp) :: c          !< Cell-avg. sound speed
         real(wp) :: H          !< Cell-avg. enthalpy
         real(wp), dimension(2) :: Re         !< Cell-avg. Reynolds numbers
         integer :: j, k, l
 
         ! Computing Stability Criteria at Current Time-step
-        $:GPU_PARALLEL_LOOP(collapse=3, private='[vel, alpha, Re]')
+        $:GPU_PARALLEL_LOOP(collapse=3, private='[j,k,l,vel, alpha, Re, rho, vel_sum, pres, gamma, pi_inf, c, H, qv]')
         do l = 0, p
             do k = 0, n
                 do j = 0, m
-                    call s_compute_enthalpy(q_prim_vf, pres, rho, gamma, pi_inf, Re, H, alpha, vel, vel_sum, j, k, l)
+                    call s_compute_enthalpy(q_prim_vf, pres, rho, gamma, pi_inf, Re, H, alpha, vel, vel_sum, qv, j, k, l)
 
-                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, 0._wp, c)
+                    call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, H, alpha, vel_sum, 0._wp, c, qv)
 
                     if (viscous) then
                         call s_compute_stability_from_dt(vel, c, rho, Re, j, k, l, icfl_sf, vcfl_sf, Rc_sf)
@@ -304,6 +297,7 @@ contains
                 end do
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
         ! end: Computing Stability Criteria at Current Time-step
 
@@ -358,15 +352,16 @@ contains
 
         ! Outputting global stability criteria extrema at current time-step
         if (proc_rank == 0) then
+            write (3, '(13X,I9,13X,F10.6,13X,F10.6,13X,F10.6)', advance="no") &
+                t_step, dt, mytime, icfl_max_glb
+
             if (viscous) then
-                write (3, '(6X,I8,F10.6,6X,6X,F10.6,6X,F9.6,6X,F9.6,6X,F10.6)') &
-                    t_step, dt, t_step*dt, icfl_max_glb, &
+                write (3, '(13X,F10.6,13X,ES16.6)', advance="no") &
                     vcfl_max_glb, &
                     Rc_min_glb
-            else
-                write (3, '(13X,I8,14X,F10.6,14X,F10.6,13X,F9.6)') &
-                    t_step, dt, t_step*dt, icfl_max_glb
             end if
+
+            write (3, *) ! new line
 
             if (.not. f_approx_equal(icfl_max_glb, icfl_max_glb)) then
                 call s_mpi_abort('ICFL is NaN. Exiting.')
@@ -509,13 +504,13 @@ contains
                   FORM='unformatted', &
                   STATUS='new')
 
-            write (2) ib_markers%sf; close (2)
+            write (2) ib_markers%sf(0:m, 0:n, 0:p); close (2)
         end if
 
-        gamma = fluid_pp(1)%gamma
-        lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
-        pi_inf = fluid_pp(1)%pi_inf
-        qv = fluid_pp(1)%qv
+        gamma = gammas(1)
+        lit_gamma = gs_min(1)
+        pi_inf = pi_infs(1)
+        qv = qvs(1)
 
         if (precision == 1) then
             FMT = "(2F30.3)"
@@ -531,7 +526,7 @@ contains
 
         if (.not. file_exist) call s_create_directory(trim(t_step_dir))
 
-        if (prim_vars_wrt .or. (n == 0 .and. p == 0)) then
+        if ((prim_vars_wrt .or. (n == 0 .and. p == 0)) .and. (.not. igr)) then
             call s_convert_conservative_to_primitive_variables(q_cons_vf, q_T_sf, q_prim_vf, idwint)
             do i = 1, sys_size
                 $:GPU_UPDATE(host='[q_prim_vf(i)%sf(:,:,:)]')
@@ -623,7 +618,7 @@ contains
                 open (2, FILE=trim(file_path))
                 do j = 0, m
                     do k = 0, n
-                        write (2, FMT) x_cb(j), y_cb(k), beta%sf(0:m, 0:n, 0)
+                        write (2, FMT) x_cb(j), y_cb(k), beta%sf(j, k, 0)
                     end do
                     write (2, *)
                 end do
@@ -823,8 +818,7 @@ contains
         integer :: m_glb_save, n_glb_save, p_glb_save ! Global save size
 
         if (down_sample) then
-            call s_populate_variables_buffers(bc_type, q_cons_vf)
-            call s_downsample_data(q_cons_vf, q_cons_temp, &
+            call s_downsample_data(q_cons_vf, q_cons_temp_ds, &
                                    m_ds, n_ds, p_ds, m_glb_ds, n_glb_ds, p_glb_ds)
         end if
 
@@ -840,7 +834,7 @@ contains
 
             ! Initialize MPI data I/O
             if (down_sample) then
-                call s_initialize_mpi_data_ds(q_cons_temp)
+                call s_initialize_mpi_data_ds(q_cons_temp_ds)
             else
                 if (ib) then
                     call s_initialize_mpi_data(q_cons_vf, ib_markers, levelset, levelset_norm)
@@ -901,16 +895,16 @@ contains
                 do i = 1, sys_size
                     var_MOK = int(i, MPI_OFFSET_KIND)
 
-                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                            mpi_p, status, ierr)
+                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                            mpi_io_p, status, ierr)
                 end do
                 !Write pb and mv for non-polytropic qbmm
                 if (qbmm .and. .not. polytropic) then
                     do i = sys_size + 1, sys_size + 2*nb*nnode
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
-                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                                mpi_p, status, ierr)
+                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                                mpi_io_p, status, ierr)
                     end do
                 end if
             else
@@ -918,15 +912,15 @@ contains
                     do i = 1, sys_size !TODO: check if correct (sys_size
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
-                        call MPI_FILE_WRITE_ALL(ifile, q_cons_temp(i)%sf, data_size, &
-                                                mpi_p, status, ierr)
+                        call MPI_FILE_WRITE_ALL(ifile, q_cons_temp_ds(i)%sf, data_size*mpi_io_type, &
+                                                mpi_io_p, status, ierr)
                     end do
                 else
                     do i = 1, sys_size !TODO: check if correct (sys_size
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
-                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                                mpi_p, status, ierr)
+                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                                mpi_io_p, status, ierr)
                     end do
                 end if
             end if
@@ -974,8 +968,8 @@ contains
 
                     call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
                                            'native', mpi_info_int, ierr)
-                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                            mpi_p, status, ierr)
+                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                            mpi_io_p, status, ierr)
                 end do
                 !Write pb and mv for non-polytropic qbmm
                 if (qbmm .and. .not. polytropic) then
@@ -987,8 +981,8 @@ contains
 
                         call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                                mpi_p, status, ierr)
+                        call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                                mpi_io_p, status, ierr)
                     end do
                 end if
             else
@@ -1000,8 +994,8 @@ contains
 
                     call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
                                            'native', mpi_info_int, ierr)
-                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                            mpi_p, status, ierr)
+                    call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                            mpi_io_p, status, ierr)
                 end do
             end if
 
@@ -1014,11 +1008,29 @@ contains
 
                 call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(sys_size + 1), &
                                        'native', mpi_info_int, ierr)
-                call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(sys_size + 1)%sf, data_size, &
-                                        mpi_p, status, ierr)
+                call MPI_FILE_WRITE_ALL(ifile, MPI_IO_DATA%var(sys_size + 1)%sf, data_size*mpi_io_type, &
+                                        mpi_io_p, status, ierr)
             end if
 
             call MPI_FILE_CLOSE(ifile, ierr)
+
+            !Write ib data
+            if (ib) then
+                write (file_loc, '(A)') 'ib.dat'
+                file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//trim(file_loc)
+                call MPI_FILE_OPEN(MPI_COMM_WORLD, file_loc, ior(MPI_MODE_WRONLY, MPI_MODE_CREATE), &
+                                   mpi_info_int, ifile, ierr)
+
+                var_MOK = int(sys_size + 1, MPI_OFFSET_KIND)
+                disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1 + int(t_step/t_step_save))
+
+                call MPI_FILE_SET_VIEW(ifile, disp, MPI_INTEGER, MPI_IO_IB_DATA%view, &
+                                       'native', mpi_info_int, ierr)
+                call MPI_FILE_WRITE_ALL(ifile, MPI_IO_IB_DATA%var%sf, data_size, &
+                                        MPI_INTEGER, status, ierr)
+                call MPI_FILE_CLOSE(ifile, ierr)
+            end if
+
         end if
 #endif
 
@@ -1227,7 +1239,7 @@ contains
                     end if
 
                     if (model_eqns == 4) then
-                        lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
+                        lit_gamma = gammas(1)
                     else if (elasticity) then
                         tau_e(1) = q_cons_vf(stress_idx%end)%sf(j - 2, k, l)/rho
                     end if
@@ -1281,7 +1293,7 @@ contains
 
                     ! Compute mixture sound Speed
                     call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                  ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                  ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c, qv)
 
                     accel = accel_mag(j - 2, k, l)
                 end if
@@ -1341,7 +1353,7 @@ contains
                         end if
 
                         if (model_eqns == 4) then
-                            lit_gamma = 1._wp/fluid_pp(1)%gamma + 1._wp
+                            lit_gamma = gs_min(1)
                         else if (elasticity) then
                             do s = 1, 3
                                 tau_e(s) = q_cons_vf(s)%sf(j - 2, k - 2, l)/rho
@@ -1371,7 +1383,7 @@ contains
                         end if
                         ! Compute mixture sound speed
                         call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                      ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                      ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c, qv)
 
                     end if
                 end if
@@ -1436,7 +1448,7 @@ contains
 
                             ! Compute mixture sound speed
                             call s_compute_speed_of_sound(pres, rho, gamma, pi_inf, &
-                                                          ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c)
+                                                          ((gamma + 1._wp)*pres + pi_inf)/rho, alpha, 0._wp, 0._wp, c, qv)
 
                             accel = accel_mag(j - 2, k - 2, l - 2)
                         end if
@@ -1818,9 +1830,9 @@ contains
             n_ds = int((n + 1)/3) - 1
             p_ds = int((p + 1)/3) - 1
 
-            allocate (q_cons_temp(1:sys_size))
+            allocate (q_cons_temp_ds(1:sys_size))
             do i = 1, sys_size
-                allocate (q_cons_temp(i)%sf(-1:m_ds + 1, -1:n_ds + 1, -1:p_ds + 1))
+                allocate (q_cons_temp_ds(i)%sf(-1:m_ds + 1, -1:n_ds + 1, -1:p_ds + 1))
             end do
         end if
 
@@ -1845,9 +1857,9 @@ contains
 
         if (down_sample) then
             do i = 1, sys_size
-                deallocate (q_cons_temp(i)%sf)
+                deallocate (q_cons_temp_ds(i)%sf)
             end do
-            deallocate (q_cons_temp)
+            deallocate (q_cons_temp_ds)
         end if
 
     end subroutine s_finalize_data_output_module

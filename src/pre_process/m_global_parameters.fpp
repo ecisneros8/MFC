@@ -155,6 +155,8 @@ module m_global_parameters
     real(wp) :: mixlayer_perturb_k0  !< Peak wavenumber of prescribed energy spectra with mixlayer_perturb flag
                                      !! Default value (k0 = 0.4446) is most unstable mode obtained from linear stability analysis
                                      !! See Michalke (1964, JFM) for details
+    logical :: simplex_perturb
+    type(simplex_noise_params) :: simplex_params
 
     real(wp) :: pi_fac !< Factor for artificial pi_inf
 
@@ -288,6 +290,8 @@ module m_global_parameters
     !! conditions data to march the solution in the physical computational domain
     !! to the next time-step.
 
+    logical :: fft_wrt
+
 contains
 
     !>  Assigns default values to user inputs prior to reading
@@ -394,6 +398,18 @@ contains
         fluid_rho = dflt_real
         elliptic_smoothing_iters = dflt_int
         elliptic_smoothing = .false.
+
+        fft_wrt = .false.
+
+        simplex_perturb = .false.
+        simplex_params%perturb_vel(:) = .false.
+        simplex_params%perturb_vel_freq(:) = dflt_real
+        simplex_params%perturb_vel_scale(:) = dflt_real
+        simplex_params%perturb_vel_offset(:, :) = dflt_real
+        simplex_params%perturb_dens(:) = .false.
+        simplex_params%perturb_dens_freq(:) = dflt_real
+        simplex_params%perturb_dens_scale(:) = dflt_real
+        simplex_params%perturb_dens_offset(:, :) = dflt_real
 
         ! Initial condition parameters
         num_patches = dflt_int
@@ -538,6 +554,19 @@ contains
             patch_ib(i)%model_filepath(:) = dflt_char
             patch_ib(i)%model_spc = num_ray
             patch_ib(i)%model_threshold = ray_tracing_threshold
+
+            ! Variables to handle moving imersed boundaries, defaulting to no movement
+            patch_ib(i)%moving_ibm = 0
+            patch_ib(i)%vel(:) = 0._wp
+            patch_ib(i)%angles(:) = 0._wp
+            patch_ib(i)%angular_vel(:) = 0._wp
+
+            ! sets values of a rotation matrix which can be used when calculating rotations
+            patch_ib(i)%rotation_matrix = 0._wp
+            patch_ib(i)%rotation_matrix(1, 1) = 1._wp
+            patch_ib(i)%rotation_matrix(2, 2) = 1._wp
+            patch_ib(i)%rotation_matrix(3, 3) = 1._wp
+            patch_ib(i)%rotation_matrix_inverse = patch_ib(i)%rotation_matrix
         end do
 
         ! Fluids physical parameters
@@ -555,6 +584,7 @@ contains
             fluid_pp(i)%qv = 0._wp
             fluid_pp(i)%qvp = 0._wp
             fluid_pp(i)%G = 0._wp
+            fluid_pp(i)%D_v = dflt_real
         end do
 
         Bx0 = dflt_real
@@ -884,7 +914,7 @@ contains
                                            igr_order, buff_size, &
                                            idwint, idwbuff, viscous, &
                                            bubbles_lagrange, m, n, p, &
-                                           num_dims, igr)
+                                           num_dims, igr, ib)
 
 #ifdef MFC_MPI
 
@@ -1004,8 +1034,6 @@ contains
             deallocate (MPI_IO_DATA%var)
             deallocate (MPI_IO_DATA%view)
         end if
-
-        if (ib) deallocate (MPI_IO_IB_DATA%var%sf)
 
 #endif
 

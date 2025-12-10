@@ -27,7 +27,9 @@ module m_initial_condition
     use m_variables_conversion  ! Subroutines to change the state variables from
     ! one form to another
 
-    use m_patches
+    use m_ib_patches
+
+    use m_icpp_patches
 
     use m_assign_variables
 
@@ -51,7 +53,12 @@ module m_initial_condition
 
     type(integer_field), dimension(:, :), allocatable :: bc_type !< bc_type fields
 
-    integer, allocatable, dimension(:, :, :) :: patch_id_fp !<
+#ifdef MFC_MIXED_PRECISION
+    integer(kind=1), allocatable, dimension(:, :, :) :: patch_id_fp
+#else
+    integer, allocatable, dimension(:, :, :) :: patch_id_fp
+#endif
+
     !! Bookkepping variable used to track the patch identities (id) associated
     !! with each of the cells in the computational domain. Note that only one
     !! patch identity may be associated with any one cell.
@@ -115,42 +122,42 @@ contains
         ! up. The conservative variables do not need to be similarly treated
         ! since they are computed directly from the primitive variables.
         do i = 1, sys_size
-            q_cons_vf(i)%sf = dflt_real
-            q_prim_vf(i)%sf = dflt_real
+            q_cons_vf(i)%sf = -1.e-6_stp ! real(dflt_real, kind=stp) ! TODO :: remove this magic number
+            q_prim_vf(i)%sf = -1.e-6_stp ! real(dflt_real, kind=stp)
         end do
 
         ! Allocating arrays to store the bc types
-        allocate (bc_type(1:num_dims, -1:1))
+        allocate (bc_type(1:num_dims, 1:2))
 
-        allocate (bc_type(1, -1)%sf(0:0, 0:n, 0:p))
         allocate (bc_type(1, 1)%sf(0:0, 0:n, 0:p))
+        allocate (bc_type(1, 2)%sf(0:0, 0:n, 0:p))
 
         do l = 0, p
             do k = 0, n
-                bc_type(1, -1)%sf(0, k, l) = bc_x%beg
-                bc_type(1, 1)%sf(0, k, l) = bc_x%end
+                bc_type(1, 1)%sf(0, k, l) = int(min(bc_x%beg, 0), kind=1)
+                bc_type(1, 2)%sf(0, k, l) = int(min(bc_x%end, 0), kind=1)
             end do
         end do
 
         if (n > 0) then
-            allocate (bc_type(2, -1)%sf(-buff_size:m + buff_size, 0:0, 0:p))
             allocate (bc_type(2, 1)%sf(-buff_size:m + buff_size, 0:0, 0:p))
+            allocate (bc_type(2, 2)%sf(-buff_size:m + buff_size, 0:0, 0:p))
 
             do l = 0, p
                 do j = -buff_size, m + buff_size
-                    bc_type(2, -1)%sf(j, 0, l) = bc_y%beg
-                    bc_type(2, 1)%sf(j, 0, l) = bc_y%end
+                    bc_type(2, 1)%sf(j, 0, l) = int(min(bc_y%beg, 0), kind=1)
+                    bc_type(2, 2)%sf(j, 0, l) = int(min(bc_y%end, 0), kind=1)
                 end do
             end do
 
             if (p > 0) then
-                allocate (bc_type(3, -1)%sf(-buff_size:m + buff_size, -buff_size:n + buff_size, 0:0))
                 allocate (bc_type(3, 1)%sf(-buff_size:m + buff_size, -buff_size:n + buff_size, 0:0))
+                allocate (bc_type(3, 2)%sf(-buff_size:m + buff_size, -buff_size:n + buff_size, 0:0))
 
                 do k = -buff_size, n + buff_size
                     do j = -buff_size, m + buff_size
-                        bc_type(3, -1)%sf(j, k, 0) = bc_z%beg
-                        bc_type(3, 1)%sf(j, k, 0) = bc_z%end
+                        bc_type(3, 1)%sf(j, k, 0) = int(min(bc_z%beg, 0), kind=1)
+                        bc_type(3, 2)%sf(j, k, 0) = int(min(bc_z%end, 0), kind=1)
                     end do
                 end do
             end if
@@ -178,6 +185,8 @@ contains
         !!              primitive variables are converted to conservative ones.
     impure subroutine s_generate_initial_condition
 
+        integer :: i
+
         ! Converting the conservative variables to the primitive ones given
         ! preexisting initial condition data files were read in on start-up
         if (old_ic) then
@@ -188,16 +197,19 @@ contains
         end if
 
         if (ib) then
-            call s_apply_domain_patches(patch_id_fp, q_prim_vf, ib_markers%sf, levelset, levelset_norm)
-        else
-            call s_apply_domain_patches(patch_id_fp, q_prim_vf)
+            do i = 1, num_ibs
+                call s_update_ib_rotation_matrix(i)
+            end do
+            call s_apply_ib_patches(ib_markers%sf, levelset, levelset_norm)
         end if
+        call s_apply_icpp_patches(patch_id_fp, q_prim_vf)
 
         if (num_bc_patches > 0) call s_apply_boundary_patches(q_prim_vf, bc_type)
 
         if (perturb_flow) call s_perturb_surrounding_flow(q_prim_vf)
         if (perturb_sph) call s_perturb_sphere(q_prim_vf)
         if (mixlayer_perturb) call s_perturb_mixlayer(q_prim_vf)
+        if (simplex_perturb) call s_perturb_simplex(q_prim_vf)
         if (elliptic_smoothing) call s_elliptic_smoothing(q_prim_vf, bc_type)
 
         ! Converting the primitive variables to the conservative ones
@@ -237,6 +249,21 @@ contains
         if (ib) then
             deallocate (ib_markers%sf, levelset%sf, levelset_norm%sf)
         end if
+
+        deallocate (bc_type(1, 1)%sf)
+        deallocate (bc_type(1, 2)%sf)
+
+        if (n > 0) then
+            deallocate (bc_type(2, 1)%sf)
+            deallocate (bc_type(2, 2)%sf)
+        end if
+
+        if (p > 0) then
+            deallocate (bc_type(3, 1)%sf)
+            deallocate (bc_type(3, 2)%sf)
+        end if
+
+        deallocate (bc_type)
 
     end subroutine s_finalize_initial_condition_module
 

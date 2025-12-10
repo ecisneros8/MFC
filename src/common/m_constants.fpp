@@ -10,6 +10,7 @@ module m_constants
 
     real(wp), parameter :: dflt_real = -1.e6_wp                !< Default real value
     real(wp), parameter :: sgm_eps = 1.e-16_wp               !< Segmentation tolerance
+    real(wp), parameter :: Chem_Tolerance = 1.e-16_wp               !< Speed of Sound Tolerance in Chemistry
     real(wp), parameter :: small_alf = 1.e-11_wp                !< Small alf tolerance
     real(wp), parameter :: pi = 3.141592653589793_wp !< Pi
     real(wp), parameter :: verysmall = 1.e-12_wp              !< Very small number
@@ -61,6 +62,7 @@ module m_constants
     ! Lagrange bubbles constants
     integer, parameter :: mapCells = 3         !< Number of cells around the bubble where the smoothening function will have effect
     real(wp), parameter :: R_uni = 8314._wp    !< Universal gas constant - J/kmol/K
+    integer, parameter :: lag_io_vars = 21 ! Number of variables per particle for MPI_IO
 
     ! Strang Splitting constants
     real(wp), parameter :: dflt_adap_dt_tol = 1.e-4_wp !< Default tolerance for adaptive step size

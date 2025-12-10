@@ -71,9 +71,7 @@ module m_start_up
 
     use m_helper_basic          !< Functions to compare floating point numbers
 
-#ifdef MFC_OpenACC
-    use openacc
-#endif
+    $:USE_GPU_MODULE()
 
     use m_nvtx
 
@@ -109,20 +107,18 @@ module m_start_up
  s_save_performance_metrics
 
     type(scalar_field), allocatable, dimension(:) :: q_cons_temp
-    $:GPU_DECLARE(create='[q_cons_temp]')
 
     real(wp) :: dt_init
 
 contains
 
-   !> Read data files. Dispatch subroutine that replaces procedure pointer.
+    !> Read data files. Dispatch subroutine that replaces procedure pointer.
         !! @param q_cons_vf Conservative variables
     impure subroutine s_read_data_files(q_cons_vf)
 
         type(scalar_field), &
             dimension(sys_size), &
             intent(inout) :: q_cons_vf
-
 
         if (.not. parallel_io) then
             call s_read_serial_data_files(q_cons_vf)
@@ -189,7 +185,7 @@ contains
             cont_damage, tau_star, cont_damage_s, alpha_bar, &
             alf_factor, num_igr_iters, num_igr_warm_start_iters, &
             int_comp, ic_eps, ic_beta, nv_uvm_out_of_core, &
-            nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample
+            nv_uvm_igr_temps_on_gpu, nv_uvm_pref_gpu, down_sample, fft_wrt
 
         ! Checking that an input file has been provided by the user. If it
         ! has, then the input file is read in, otherwise, simulation exits.
@@ -214,7 +210,7 @@ contains
 
             if ((bf_x) .or. (bf_y) .or. (bf_z) .or. (bf_spatial_support)) then
                 bodyForces = .true.
-            endif
+            end if
 
             ! Store m,n,p into global m,n,p
             m_glb = m
@@ -228,7 +224,7 @@ contains
             if (any((/bc_x%beg, bc_x%end, bc_y%beg, bc_y%end, bc_z%beg, bc_z%end/) == -17) .or. &
                 num_bc_patches > 0) then
                 bc_io = .true.
-            endif
+            end if
 
         else
             call s_mpi_abort(trim(file_path)//' is missing. Exiting.')
@@ -270,7 +266,6 @@ contains
     impure subroutine s_read_serial_data_files(q_cons_vf)
 
         type(scalar_field), dimension(sys_size), intent(INOUT) :: q_cons_vf
-
 
         character(LEN=path_len + 2*name_len) :: t_step_dir !<
             !! Relative path to the starting time-step directory
@@ -437,9 +432,9 @@ contains
             inquire (FILE=trim(file_path), EXIST=file_exist)
             if (file_exist) then
                 open (2, FILE=trim(file_path), &
-                        FORM='unformatted', &
-                        ACTION='read', &
-                        STATUS='old')
+                      FORM='unformatted', &
+                      ACTION='read', &
+                      STATUS='old')
                 read (2) ib_markers%sf(0:m, 0:n, 0:p); close (2)
             else
                 call s_mpi_abort(trim(file_path)//' is missing. Exiting.')
@@ -451,9 +446,9 @@ contains
             inquire (FILE=trim(file_path), EXIST=file_exist)
             if (file_exist) then
                 open (2, FILE=trim(file_path), &
-                        FORM='unformatted', &
-                        ACTION='read', &
-                        STATUS='old')
+                      FORM='unformatted', &
+                      ACTION='read', &
+                      STATUS='old')
                 read (2) levelset%sf(0:m, 0:n, 0:p, 1:num_ibs); close (2)
                 ! print*, 'check', STL_levelset(106, 50, 0, 1)
             else
@@ -466,9 +461,9 @@ contains
             inquire (FILE=trim(file_path), EXIST=file_exist)
             if (file_exist) then
                 open (2, FILE=trim(file_path), &
-                        FORM='unformatted', &
-                        ACTION='read', &
-                        STATUS='old')
+                      FORM='unformatted', &
+                      ACTION='read', &
+                      STATUS='old')
                 read (2) levelset_norm%sf(0:m, 0:n, 0:p, 1:num_ibs, 1:3); close (2)
             else
                 call s_mpi_abort(trim(file_path)//' is missing. Exiting.')
@@ -550,14 +545,14 @@ contains
         file_loc = trim(case_dir)//'/restart_data'//trim(mpiiofs)//'x_cb.dat'
         inquire (FILE=trim(file_loc), EXIST=file_exist)
 
-        if(down_sample) then
-            m_ds = INT((m+1)/3) - 1
-            n_ds = INT((n+1)/3) - 1
-            p_ds = INT((p+1)/3) - 1
+        if (down_sample) then
+            m_ds = int((m + 1)/3) - 1
+            n_ds = int((n + 1)/3) - 1
+            p_ds = int((p + 1)/3) - 1
 
-            m_glb_ds = INT((m_glb+1)/3) - 1
-            n_glb_ds = INT((n_glb+1)/3) - 1
-            p_glb_ds = INT((p_glb+1)/3) - 1
+            m_glb_ds = int((m_glb + 1)/3) - 1
+            n_glb_ds = int((n_glb + 1)/3) - 1
+            p_glb_ds = int((p_glb + 1)/3) - 1
         end if
 
         if (file_exist) then
@@ -581,7 +576,6 @@ contains
                 if (patch_ib(i)%c > 0) then
                     Np = int((patch_ib(i)%p*patch_ib(i)%c/dx(0))*20) + int(((patch_ib(i)%c - patch_ib(i)%p*patch_ib(i)%c)/dx(0))*20) + 1
                     allocate (MPI_IO_airfoil_IB_DATA%var(1:2*Np))
-                    print *, "HERE Np", Np
                 end if
             end do
         end if
@@ -646,18 +640,18 @@ contains
                 call MPI_FILE_OPEN(MPI_COMM_SELF, file_loc, MPI_MODE_RDONLY, mpi_info_int, ifile, ierr)
 
                 ! Initialize MPI data I/O
-                if(down_sample) then
+                if (down_sample) then
                     call s_initialize_mpi_data_ds(q_cons_vf)
                 else
                     if (ib) then
                         call s_initialize_mpi_data(q_cons_vf, ib_markers, &
-                            levelset, levelset_norm)
+                                                   levelset, levelset_norm)
                     else
                         call s_initialize_mpi_data(q_cons_vf)
                     end if
                 end if
 
-                if(down_sample) then
+                if (down_sample) then
                     ! Size of local arrays
                     data_size = (m_ds + 3)*(n_ds + 3)*(p_ds + 3)
                     m_glb_read = m_glb_ds + 1
@@ -675,43 +669,42 @@ contains
                 m_MOK = int(m_glb_read + 1, MPI_OFFSET_KIND)
                 n_MOK = int(m_glb_read + 1, MPI_OFFSET_KIND)
                 p_MOK = int(m_glb_read + 1, MPI_OFFSET_KIND)
-                WP_MOK = int(8._wp, MPI_OFFSET_KIND)
+                WP_MOK = int(4._wp, MPI_OFFSET_KIND)
                 MOK = int(1._wp, MPI_OFFSET_KIND)
                 str_MOK = int(name_len, MPI_OFFSET_KIND)
                 NVARS_MOK = int(sys_size, MPI_OFFSET_KIND)
 
                 ! Read the data for each variable
                 if (bubbles_euler .or. elasticity) then
-
                     do i = 1, sys_size!adv_idx%end
                         var_MOK = int(i, MPI_OFFSET_KIND)
 
-                        call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
                     end do
                     !Read pb and mv for non-polytropic qbmm
                     if (qbmm .and. .not. polytropic) then
                         do i = sys_size + 1, sys_size + 2*nb*nnode
                             var_MOK = int(i, MPI_OFFSET_KIND)
 
-                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                               mpi_p, status, ierr)
+                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                         end do
                     end if
                 else
-                    if(down_sample) then
+                    if (down_sample) then
                         do i = 1, sys_size
                             var_MOK = int(i, MPI_OFFSET_KIND)
 
-                            call MPI_FILE_READ(ifile, q_cons_temp(i)%sf, data_size, &
-                                               mpi_p, status, ierr)
+                            call MPI_FILE_READ(ifile, q_cons_temp(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                         end do
                     else
                         do i = 1, sys_size
                             var_MOK = int(i, MPI_OFFSET_KIND)
 
-                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                               mpi_p, status, ierr)
+                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                         end do
                     end if
                 end if
@@ -752,10 +745,10 @@ contains
 
                         disp = 0
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_levelset_DATA%view, &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_levelset_DATA%view, &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_levelset_DATA%var%sf, data_size * num_ibs, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelset_DATA%var%sf, data_size*num_ibs*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
 
                     else
                         call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
@@ -772,10 +765,10 @@ contains
 
                         disp = 0
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_levelsetnorm_DATA%view, &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_levelsetnorm_DATA%view, &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_levelsetnorm_DATA%var%sf, data_size * num_ibs * 3, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelsetnorm_DATA%var%sf, data_size*num_ibs*3*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
 
                     else
                         call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
@@ -787,7 +780,6 @@ contains
                 call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
             end if
         else
-
             ! Open the file to read conservative variables
             if (cfl_dt) then
                 write (file_loc, '(I0,A)') n_start, '.dat'
@@ -804,13 +796,12 @@ contains
 
                 if (ib) then
                     call s_initialize_mpi_data(q_cons_vf, ib_markers, &
-                        levelset, levelset_norm)
+                                               levelset, levelset_norm)
                 else
 
                     call s_initialize_mpi_data(q_cons_vf)
 
                 end if
-
 
                 ! Size of local arrays
                 data_size = (m + 1)*(n + 1)*(p + 1)
@@ -831,10 +822,10 @@ contains
                         ! Initial displacement to skip at beginning of file
                         disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_DATA%view(i), &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
                     end do
                     !Read pb and mv for non-polytropic qbmm
                     if (qbmm .and. .not. polytropic) then
@@ -843,10 +834,10 @@ contains
                             ! Initial displacement to skip at beginning of file
                             disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
-                            call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
+                            call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_DATA%view(i), &
                                                    'native', mpi_info_int, ierr)
-                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                               mpi_p, status, ierr)
+                            call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                         end do
                     end if
                 else
@@ -856,11 +847,10 @@ contains
                         ! Initial displacement to skip at beginning of file
                         disp = m_MOK*max(MOK, n_MOK)*max(MOK, p_MOK)*WP_MOK*(var_MOK - 1)
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_DATA%view(i), &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_DATA%view(i), &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_DATA%var(i)%sf, data_size, &
-                                           mpi_p, status, ierr)
-
+                        call MPI_FILE_READ_ALL(ifile, MPI_IO_DATA%var(i)%sf, data_size*mpi_io_type, &
+                                               mpi_io_p, status, ierr)
                     end do
                 end if
 
@@ -901,10 +891,10 @@ contains
 
                         disp = 0
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_levelset_DATA%view, &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_levelset_DATA%view, &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_levelset_DATA%var%sf, data_size * num_ibs, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelset_DATA%var%sf, data_size*num_ibs*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
 
                     else
                         call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
@@ -921,10 +911,10 @@ contains
 
                         disp = 0
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_levelsetnorm_DATA%view, &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_levelsetnorm_DATA%view, &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_levelsetnorm_DATA%var%sf, data_size * num_ibs * 3, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_levelsetnorm_DATA%var%sf, data_size*num_ibs*3*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
 
                     else
                         call s_mpi_abort('File '//trim(file_loc)//' is missing. Exiting.')
@@ -943,8 +933,6 @@ contains
             do j = 1, num_ibs
                 if (patch_ib(j)%c > 0) then
 
-                    print *, "HERE Np", Np
-
                     allocate (airfoil_grid_u(1:Np))
                     allocate (airfoil_grid_l(1:Np))
 
@@ -958,10 +946,10 @@ contains
                         ! Initial displacement to skip at beginning of file
                         disp = 0
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_airfoil_IB_DATA%view(1), &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_airfoil_IB_DATA%view(1), &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_airfoil_IB_DATA%var(1:Np), 3*Np, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_airfoil_IB_DATA%var(1:Np), 3*Np*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
 
                     end if
 
@@ -975,10 +963,10 @@ contains
                         ! Initial displacement to skip at beginning of file
                         disp = 0
 
-                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_p, MPI_IO_airfoil_IB_DATA%view(2), &
+                        call MPI_FILE_SET_VIEW(ifile, disp, mpi_io_p, MPI_IO_airfoil_IB_DATA%view(2), &
                                                'native', mpi_info_int, ierr)
-                        call MPI_FILE_READ(ifile, MPI_IO_airfoil_IB_DATA%var(Np + 1:2*Np), 3*Np, &
-                                           mpi_p, status, ierr)
+                        call MPI_FILE_READ(ifile, MPI_IO_airfoil_IB_DATA%var(Np + 1:2*Np), 3*Np*mpi_io_type, &
+                                           mpi_io_p, status, ierr)
                     end if
 
                     do i = 1, Np
@@ -1007,7 +995,7 @@ contains
 
     end subroutine s_read_parallel_data_files
 
-        !> The purpose of this procedure is to initialize the
+    !> The purpose of this procedure is to initialize the
         !!      values of the internal-energy equations of each phase
         !!      from the mass of each phase, the mixture momentum and
         !!      mixture-total-energy equations.
@@ -1054,19 +1042,18 @@ contains
 
                     if (mhd) then
                         if (n == 0) then
-                            pres_mag = 0.5_wp*(Bx0**2 + v_vf(B_idx%beg)%sf(j, k, l)**2 + v_vf(B_idx%beg+1)%sf(j, k, l)**2)
+                            pres_mag = 0.5_wp*(Bx0**2 + v_vf(B_idx%beg)%sf(j, k, l)**2 + v_vf(B_idx%beg + 1)%sf(j, k, l)**2)
                         else
-                            pres_mag = 0.5_wp*(v_vf(B_idx%beg)%sf(j, k, l)**2 + v_vf(B_idx%beg+1)%sf(j, k, l)**2 + v_vf(B_idx%beg+2)%sf(j, k, l)**2)
+                            pres_mag = 0.5_wp*(v_vf(B_idx%beg)%sf(j, k, l)**2 + v_vf(B_idx%beg + 1)%sf(j, k, l)**2 + v_vf(B_idx%beg + 2)%sf(j, k, l)**2)
                         end if
                     end if
 
-                    call s_compute_pressure(v_vf(E_idx)%sf(j, k, l), 0._wp, &
-                                            dyn_pres, pi_inf, gamma, rho, qv, rhoYks, pres, T, pres_mag = pres_mag)
+                    call s_compute_pressure(v_vf(E_idx)%sf(j, k, l), 0._stp, &
+                                            dyn_pres, pi_inf, gamma, rho, qv, rhoYks, pres, T, pres_mag=pres_mag)
 
                     do i = 1, num_fluids
-                        v_vf(i + internalEnergies_idx%beg - 1)%sf(j, k, l) = v_vf(i + adv_idx%beg - 1)%sf(j, k, l)* &
-                                                                             (fluid_pp(i)%gamma*pres + fluid_pp(i)%pi_inf) &
-                                                                             + v_vf(i + cont_idx%beg - 1)%sf(j, k, l)*fluid_pp(i)%qv
+                        v_vf(i + intxb - 1)%sf(j, k, l) = v_vf(i + advxb - 1)%sf(j, k, l)*(gammas(i)*pres + pi_infs(i)) &
+                                                          + v_vf(i + contxb - 1)%sf(j, k, l)*qvs(i)
                     end do
 
                 end do
@@ -1079,7 +1066,6 @@ contains
         integer, intent(inout) :: t_step
         real(wp), intent(inout) :: time_avg
 
-
         integer :: i
 
         if (cfl_dt) then
@@ -1090,7 +1076,7 @@ contains
             if (t_step == 0) dt_init = dt
 
             if (dt < 1.e-3_wp*dt_init .and. cfl_adap_dt .and. proc_rank == 0) then
-                print*, "Delta t = ", dt
+                print *, "Delta t = ", dt
                 call s_mpi_abort("Delta t has become too small")
             end if
         end if
@@ -1120,7 +1106,7 @@ contains
         else
             if (proc_rank == 0 .and. mod(t_step - t_step_start, t_step_print) == 0) then
                 print '(" [", I3, "%]  Time step ", I8, " of ", I0, " @ t_step = ", I8,  " Time Avg = ", ES12.6,  " Time/step= ", ES12.6, "")', &
-                   int(ceiling(100._wp*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
+                    int(ceiling(100._wp*(real(t_step - t_step_start)/(t_step_stop - t_step_start + 1)))), &
                     t_step - t_step_start + 1, &
                     t_step_stop - t_step_start + 1, &
                     t_step, &
@@ -1137,22 +1123,14 @@ contains
 
         call s_compute_derived_variables(t_step)
 
-
 #ifdef DEBUG
         print *, 'Computed derived vars'
 #endif
-
         mytime = mytime + dt
 
         ! Total-variation-diminishing (TVD) Runge-Kutta (RK) time-steppers
-        if (time_stepper == 1) then
-            call s_1st_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 2) then
-            call s_2nd_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 3 .and. (.not. adap_dt)) then
-            call s_3rd_order_tvd_rk(t_step, time_avg)
-        elseif (time_stepper == 3 .and. adap_dt) then
-            call s_strang_splitting(t_step, time_avg)
+        if (any(time_stepper == (/1, 2, 3/))) then
+            call s_tvd_rk(t_step, time_avg, time_stepper)
         end if
 
         if (relax) call s_infinite_relaxation_k(q_cons_ts(1)%vf)
@@ -1192,9 +1170,9 @@ contains
                 io_time_final = maxval(io_proc_time)
             end if
 
-            grind_time = time_final * 1.0e9_wp / &
-                (real(sys_size, wp) * real(maxval((/1, m_glb/)), wp) * &
-                 real(maxval((/1, n_glb/)), wp) * real(maxval((/1, p_glb/)), wp))
+            grind_time = time_final*1.0e9_wp/ &
+                         (real(sys_size, wp)*real(maxval((/1, m_glb/)), wp)* &
+                          real(maxval((/1, n_glb/)), wp)*real(maxval((/1, p_glb/)), wp))
 
             print *, "Performance:", grind_time, "ns/gp/eq/rhs"
             inquire (FILE='time_data.dat', EXIST=file_exists)
@@ -1229,18 +1207,43 @@ contains
         real(wp), intent(inout) :: start, finish, io_time_avg
         integer, intent(inout) :: nt
 
-        integer :: i, j, k, l
+        integer(kind=8) :: i, j, k, l
+        integer :: stor
 
         integer :: save_count
+
+        if (down_sample) then
+            call s_populate_variables_buffers(bc_type, q_cons_ts(1)%vf)
+        end if
+
+        stor = 1
+
+        if (time_stepper /= 1) then
+            $:GPU_PARALLEL_LOOP(collapse=4, copyin='[idwbuff]')
+            do i = 1, sys_size
+                do l = idwbuff(3)%beg, idwbuff(3)%end
+                    do k = idwbuff(2)%beg, idwbuff(2)%end
+                        do j = idwbuff(1)%beg, idwbuff(1)%end
+                            q_cons_ts(2)%vf(i)%sf(j, k, l) = &
+                                q_cons_ts(1)%vf(i)%sf(j, k, l)
+                        end do
+                    end do
+                end do
+            end do
+            $:END_GPU_PARALLEL_LOOP()
+            stor = 2
+        end if
 
         call cpu_time(start)
         call nvtxStartRange("SAVE-DATA")
         do i = 1, sys_size
-            $:GPU_UPDATE(host='[q_cons_ts(1)%vf(i)%sf]')
+#ifndef FRONTIER_UNIFIED
+            $:GPU_UPDATE(host='[q_cons_ts(stor)%vf(i)%sf]')
+#endif
             do l = 0, p
                 do k = 0, n
                     do j = 0, m
-                        if (ieee_is_nan(q_cons_ts(1)%vf(i)%sf(j, k, l))) then
+                        if (ieee_is_nan(real(q_cons_ts(stor)%vf(i)%sf(j, k, l), kind=wp))) then
                             print *, "NaN(s) in timestep output.", j, k, l, i, proc_rank, t_step, m, n, p
                             error stop "NaN(s) in timestep output."
                         end if
@@ -1261,20 +1264,22 @@ contains
         end if
 
         if (bubbles_lagrange) then
-            $:GPU_UPDATE(host='[intfc_rad]')
+            $:GPU_UPDATE(host='[lag_id, mtn_pos, mtn_posPrev, mtn_vel, intfc_rad, &
+                & intfc_vel, bub_R0, Rmax_stats, Rmin_stats, bub_dphidt, gas_p, &
+                & gas_mv, gas_mg, gas_betaT, gas_betaC]')
             do i = 1, nBubs
                 if (ieee_is_nan(intfc_rad(i, 1)) .or. intfc_rad(i, 1) <= 0._wp) then
                     call s_mpi_abort("Bubble radius is negative or NaN, please reduce dt.")
                 end if
             end do
 
-            $:GPU_UPDATE(host='[q_beta%vf(1)%sf]')
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, bc_type, q_beta%vf(1))
+            $:GPU_UPDATE(host='[q_beta(1)%sf]')
+            call s_write_data_files(q_cons_ts(stor)%vf, q_T_sf, q_prim_vf, save_count, bc_type, q_beta(1))
             $:GPU_UPDATE(host='[Rmax_stats,Rmin_stats,gas_p,gas_mv,intfc_vel]')
             call s_write_restart_lag_bubbles(save_count) !parallel
             if (lag_params%write_bubbles_stats) call s_write_lag_bubble_stats()
         else
-            call s_write_data_files(q_cons_ts(1)%vf, q_T_sf, q_prim_vf, save_count, bc_type)
+            call s_write_data_files(q_cons_ts(stor)%vf, q_T_sf, q_prim_vf, save_count, bc_type)
         end if
 
         call nvtxEndRange
@@ -1320,7 +1325,7 @@ contains
         call s_initialize_variables_conversion_module()
         if (grid_geometry == 3) call s_initialize_fftw_module()
 
-        if(bubbles_euler) call s_initialize_bubbles_EE_module()
+        if (bubbles_euler) call s_initialize_bubbles_EE_module()
         if (ib) call s_initialize_ibm_module()
         if (qbmm) call s_initialize_qbmm_module()
 
@@ -1344,35 +1349,39 @@ contains
 
         call s_initialize_boundary_common_module()
 
-        if(down_sample) then
-            m_ds = INT((m+1)/3) - 1
-            n_ds = INT((n+1)/3) - 1
-            p_ds = INT((p+1)/3) - 1
+        if (down_sample) then
+            m_ds = int((m + 1)/3) - 1
+            n_ds = int((n + 1)/3) - 1
+            p_ds = int((p + 1)/3) - 1
 
-            allocate(q_cons_temp(1:sys_size))
+            allocate (q_cons_temp(1:sys_size))
             do i = 1, sys_size
-                allocate(q_cons_temp(i)%sf(-1:m_ds+1,-1:n_ds+1,-1:p_ds+1))
+                allocate (q_cons_temp(i)%sf(-1:m_ds + 1, -1:n_ds + 1, -1:p_ds + 1))
             end do
         end if
 
         ! Reading in the user provided initial condition and grid data
-        if(down_sample) then
+        if (down_sample) then
             call s_read_data_files(q_cons_temp)
             call s_upsample_data(q_cons_ts(1)%vf, q_cons_temp)
             do i = 1, sys_size
                 $:GPU_UPDATE(device='[q_cons_ts(1)%vf(i)%sf]')
             end do
+            do i = 1, sys_size
+                deallocate (q_cons_temp(i)%sf)
+            end do
+            deallocate (q_cons_temp)
         else
             call s_read_data_files(q_cons_ts(1)%vf)
         end if
+
+        ! Populating the buffers of the grid variables using the boundary conditions
+        call s_populate_grid_variables_buffers()
 
         if (model_eqns == 3) call s_initialize_internal_energy_equations(q_cons_ts(1)%vf)
         if (ib) call s_ibm_setup()
         if (bodyForces) call s_initialize_body_forces_module()
         if (acoustic_source) call s_precalculate_acoustic_spatial_sources()
-
-        ! Populating the buffers of the grid variables using the boundary conditions
-        call s_populate_grid_variables_buffers()
 
         ! Initialize the Temperature cache.
         if (chemistry) call s_compute_q_T_sf(q_T_sf, q_cons_ts(1)%vf, idwint)
@@ -1404,14 +1413,16 @@ contains
 
     impure subroutine s_initialize_mpi_domain
         integer :: ierr
-#ifdef MFC_OpenACC
+#ifdef MFC_GPU
         real(wp) :: starttime, endtime
         integer :: num_devices, local_size, num_nodes, ppn, my_device_num
         integer :: dev, devNum, local_rank
 #ifdef MFC_MPI
         integer :: local_comm
 #endif
+#if defined(MFC_OpenACC)
         integer(acc_device_kind) :: devtype
+#endif
 #endif
 
         ! Initializing MPI execution environment
@@ -1419,7 +1430,7 @@ contains
         call s_mpi_initialize()
 
         ! Bind GPUs if OpenACC is enabled
-#ifdef MFC_OpenACC
+#ifdef MFC_GPU
 #ifndef MFC_MPI
         local_size = 1
         local_rank = 0
@@ -1429,12 +1440,17 @@ contains
         call MPI_Comm_size(local_comm, local_size, ierr)
         call MPI_Comm_rank(local_comm, local_rank, ierr)
 #endif
-
+#if defined(MFC_OpenACC)
         devtype = acc_get_device_type()
         devNum = acc_get_num_devices(devtype)
         dev = mod(local_rank, devNum)
 
         call acc_set_device_num(dev, devtype)
+#elif defined(MFC_OpenMP)
+        devNum = omp_get_num_devices()
+        dev = mod(local_rank, devNum)
+        call omp_set_default_device(dev)
+#endif
 #endif
 
         ! The rank 0 processor assigns default values to the user inputs prior to
@@ -1453,12 +1469,12 @@ contains
                 "case-optimized", &
 #:endif
                 m, n, p, num_procs, &
-#ifdef MFC_OpenACC
-!&<
+#if defined(MFC_OpenACC)
                 "with OpenACC offloading"
-!&>
+#elif defined(MFC_OpenMP)
+            "with OpenMP offloading"
 #else
-                "on CPUs"
+            "on CPUs"
 #endif
         end if
 
@@ -1489,7 +1505,21 @@ contains
         if (chemistry) then
             $:GPU_UPDATE(device='[q_T_sf%sf]')
         end if
-        $:GPU_UPDATE(device='[nb,R0ref,Ca,Web,Re_inv,weight,R0, &
+
+        $:GPU_UPDATE(device='[chem_params]')
+
+        $:GPU_UPDATE(device='[R0ref,Ca,Web,Re_inv,weight,R0, &
+            & bubbles_euler,polytropic,polydisperse,qbmm, &
+            & ptil,bubble_model,thermal,poly_sigma,adv_n,adap_dt, &
+            & adap_dt_tol,adap_dt_max_iters,n_idx,pi_fac,low_Mach]')
+        $:GPU_UPDATE(device='[R_n,R_v,phi_vn,phi_nv,Pe_c,Tw,pv,M_n, &
+            & M_v,k_n,k_v,pb0,mass_n0,mass_v0,Pe_T,Re_trans_T, &
+            & Re_trans_c,Im_trans_T,Im_trans_c,omegaN,mul0,ss, &
+            & gamma_v,mu_v,gamma_m,gamma_n,mu_n,gam]')
+
+        $:GPU_UPDATE(device='[adv_n,adap_dt,adap_dt_tol,adap_dt_max_iters,n_idx,pi_fac,low_Mach]')
+
+        $:GPU_UPDATE(device='[R0ref,Ca,Web,Re_inv,weight,R0, &
             & bubbles_euler,polytropic,polydisperse,qbmm, &
             & ptil,bubble_model,thermal,poly_sigma,adv_n,adap_dt, &
             & adap_dt_tol,adap_dt_max_iters,n_idx,pi_fac,low_Mach]')
@@ -1502,7 +1532,6 @@ contains
         $:GPU_UPDATE(device='[sigma, surface_tension]')
 
         $:GPU_UPDATE(device='[dx,dy,dz,x_cb,x_cc,y_cb,y_cc,z_cb,z_cc]')
-
         $:GPU_UPDATE(device='[bc_x%vb1,bc_x%vb2,bc_x%vb3,bc_x%ve1,bc_x%ve2,bc_x%ve3]')
         $:GPU_UPDATE(device='[bc_y%vb1,bc_y%vb2,bc_y%vb3,bc_y%ve1,bc_y%ve2,bc_y%ve3]')
         $:GPU_UPDATE(device='[bc_z%vb1,bc_z%vb2,bc_z%vb3,bc_z%ve1,bc_z%ve2,bc_z%ve3]')
@@ -1519,8 +1548,17 @@ contains
         if (ib) then
             $:GPU_UPDATE(device='[ib_markers%sf]')
         end if
-
-        $:GPU_UPDATE(device='[igr, igr_order]')
+        #:if not MFC_CASE_OPTIMIZATION
+            $:GPU_UPDATE(device='[igr,nb,igr_order]')
+        #:endif
+        #:block DEF_AMD
+            block
+                use m_thermochem, only: molecular_weights
+                use m_chemistry, only: molecular_weights_nonparameter
+                molecular_weights_nonparameter(:) = molecular_weights(:)
+                $:GPU_UPDATE(device='[molecular_weights_nonparameter]')
+            end block
+        #:endblock
 
     end subroutine s_initialize_gpu_vars
 
@@ -1555,7 +1593,7 @@ contains
         end if
         call s_finalize_mpi_proxy_module()
 
-        if (surface_tension)  call s_finalize_surface_tension_module()
+        if (surface_tension) call s_finalize_surface_tension_module()
         if (bodyForces) call s_finalize_body_forces_module()
         if (mhd .and. powell) call s_finalize_mhd_powell_module
 

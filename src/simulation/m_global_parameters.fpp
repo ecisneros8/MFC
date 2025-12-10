@@ -21,9 +21,7 @@ module m_global_parameters
 
     use m_helper_basic         !< Functions to compare floating point numbers
 
-#ifdef MFC_OpenACC
-    use openacc
-#endif
+    ! $:USE_GPU_MODULE()
 
     implicit none
 
@@ -194,8 +192,6 @@ module m_global_parameters
     integer :: num_igr_warm_start_iters !< number of warm start iterations for elliptic solve
     real(wp) :: alf_factor  !< alpha factor for IGR
 
-    $:GPU_DECLARE(create='[chemistry]')
-
     logical :: bodyForces
     logical :: bf_x, bf_y, bf_z !< body force toggle in three directions
     !< amplitude, frequency, and phase shift sinusoid in each direction
@@ -206,6 +202,7 @@ module m_global_parameters
     #:endfor
     real(wp), dimension(3) :: accel_bf
     $:GPU_DECLARE(create='[accel_bf]')
+    ! $:GPU_DECLARE(create='[k_x,w_x,p_x,g_x,k_y,w_y,p_y,g_y,k_z,w_z,p_z,g_z]')
 
     logical :: bf_spatial_support !< body force with spatial support
     !< amplitude, frequency, central coordinate, convective velocity for body force with spatial support
@@ -242,10 +239,13 @@ module m_global_parameters
     !> @{
     type(int_bounds_info) :: bc_x, bc_y, bc_z
     !> @}
+#if defined(MFC_OpenACC)
     $:GPU_DECLARE(create='[bc_x%vb1, bc_x%vb2, bc_x%vb3, bc_x%ve1, bc_x%ve2, bc_x%ve3]')
     $:GPU_DECLARE(create='[bc_y%vb1, bc_y%vb2, bc_y%vb3, bc_y%ve1, bc_y%ve2, bc_y%ve3]')
     $:GPU_DECLARE(create='[bc_z%vb1, bc_z%vb2, bc_z%vb3, bc_z%ve1, bc_z%ve2, bc_z%ve3]')
-
+#elif defined(MFC_OpenMP)
+    $:GPU_DECLARE(create='[bc_x, bc_y, bc_z]')
+#endif
     type(bounds_info) :: x_domain, y_domain, z_domain
     real(wp) :: x_a, y_a, z_a
     real(wp) :: x_b, y_b, z_b
@@ -546,6 +546,8 @@ module m_global_parameters
     logical :: powell !< Powell‐correction for div B = 0
     $:GPU_DECLARE(create='[Bx0,powell]')
 
+    logical :: fft_wrt
+
     !> @name Continuum damage model parameters
     !> @{!
     real(wp) :: tau_star        !< Stress threshold for continuum damage modeling
@@ -698,6 +700,7 @@ contains
             fluid_pp(i)%k_v = dflt_real
             fluid_pp(i)%cp_v = dflt_real
             fluid_pp(i)%G = 0._wp
+            fluid_pp(i)%D_v = dflt_real
         end do
 
         ! Tait EOS
@@ -756,6 +759,8 @@ contains
                 ${param}$_${dir}$ = dflt_real
             #:endfor
         #:endfor
+
+        fft_wrt = .false.
 
         do j = 1, num_probes_max
             acoustic(j)%pulse = dflt_int
@@ -833,7 +838,6 @@ contains
         lag_params%T0 = dflt_real
         lag_params%Thost = dflt_real
         lag_params%x0 = dflt_real
-        lag_params%diffcoefvap = dflt_real
 
         ! Continuum damage model
         tau_star = dflt_real
@@ -957,8 +961,6 @@ contains
                         end if
                     end if
                     sys_size = bub_idx%end
-                    ! print*, 'alf idx', alf_idx
-                    ! print*, 'bub -idx beg end', bub_idx%beg, bub_idx%end
 
                     if (adv_n) then
                         n_idx = bub_idx%end + 1
@@ -1121,7 +1123,7 @@ contains
 
             Re_size_max = maxval(Re_size)
 
-            $:GPU_UPDATE(device='[Re_size,Re_size_max,viscous,shear_stress,bulk_stress]')
+            $:GPU_UPDATE(device='[Re_size,Re_size_max,shear_stress,bulk_stress]')
 
             ! Bookkeeping the indexes of any viscous fluids and any pairs of
             ! fluids whose interface will support effects of surface tension
@@ -1272,7 +1274,7 @@ contains
                                            igr_order, buff_size, &
                                            idwint, idwbuff, viscous, &
                                            bubbles_lagrange, m, n, p, &
-                                           num_dims, igr)
+                                           num_dims, igr, ib)
         $:GPU_UPDATE(device='[idwint, idwbuff]')
 
         ! Configuring Coordinate Direction Indexes
@@ -1323,12 +1325,14 @@ contains
         $:GPU_UPDATE(device='[dt,sys_size,buff_size,pref,rhoref, &
             & gamma_idx,pi_inf_idx,E_idx,alf_idx,stress_idx, &
             & mpp_lim,bubbles_euler,hypoelasticity,alt_soundspeed, &
-            & avg_state,num_fluids,model_eqns,num_dims,num_vels, &
+            & avg_state,model_eqns, &
             & mixture_err,grid_geometry,cyl_coord,mp_weno,weno_eps, &
             & teno_CT,hyperelasticity,hyper_model,elasticity,xi_idx, &
             & B_idx,low_Mach]')
 
         $:GPU_UPDATE(device='[Bx0, powell]')
+
+        $:GPU_UPDATE(device='[chem_params]')
 
         $:GPU_UPDATE(device='[cont_damage,tau_star,cont_damage_s,alpha_bar]')
 
@@ -1337,18 +1341,13 @@ contains
             $:GPU_UPDATE(device='[wenoz_q]')
             $:GPU_UPDATE(device='[mhd, relativity]')
             $:GPU_UPDATE(device='[muscl_order, muscl_lim]')
+            $:GPU_UPDATE(device='[igr, igr_order]')
+            $:GPU_UPDATE(device='[num_fluids,num_dims,viscous,num_vels,nb,muscl_lim]')
         #:endif
 
-        $:GPU_ENTER_DATA(copyin='[nb,R0ref,Ca,Web,Re_inv,weight,R0, &
-            & bubbles_euler,polytropic,polydisperse,qbmm, &
-            & ptil,bubble_model,thermal,poly_sigma]')
-        $:GPU_ENTER_DATA(copyin='[R_n,R_v,phi_vn,phi_nv,Pe_c,Tw,pv, &
-            & M_n,M_v,k_n,k_v,pb0,mass_n0,mass_v0,Pe_T, &
-            & Re_trans_T,Re_trans_c,Im_trans_T,Im_trans_c,omegaN, &
-            & mul0,ss,gamma_v,mu_v,gamma_m,gamma_n,mu_n,gam]')
-        $:GPU_ENTER_DATA(copyin='[dir_idx,dir_flg,dir_idx_tau]')
+        $:GPU_UPDATE(device='[dir_idx,dir_flg,dir_idx_tau]')
 
-        $:GPU_ENTER_DATA(copyin='[relax,relax_model,palpha_eps,ptgalpha_eps]')
+        $:GPU_UPDATE(device='[relax,relax_model,palpha_eps,ptgalpha_eps]')
 
         ! Allocating grid variables for the x-, y- and z-directions
         @:ALLOCATE(x_cb(-1 - buff_size:m + buff_size))

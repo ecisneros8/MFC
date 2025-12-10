@@ -25,7 +25,7 @@ else
 fi
 
 
-job_slug="`basename "$1" | sed 's/\.sh$//' | sed 's/[^a-zA-Z0-9]/-/g'`-$2"
+job_slug="`basename "$1" | sed 's/\.sh$//' | sed 's/[^a-zA-Z0-9]/-/g'`-$2-$3"
 
 sbatch <<EOT
 #!/bin/bash
@@ -33,7 +33,7 @@ sbatch <<EOT
 #SBATCH -A CFD154                  # charge account
 #SBATCH -N 1                       # Number of nodes required
 $sbatch_device_opts
-#SBATCH -t 04:59:00                # Duration of the job (Ex: 15 mins)
+#SBATCH -t 05:59:00                # Duration of the job (Ex: 15 mins)
 #SBATCH -o$job_slug.out            # Combined output and error messages file
 #SBATCH -p extended                # Extended partition for shorter queues
 #SBATCH -W                         # Do not exit until the submitted job terminates.
@@ -46,8 +46,9 @@ echo "Running in $(pwd):"
 
 job_slug="$job_slug"
 job_device="$2"
+job_interface="$3"
 
-. ./mfc.sh load -c f -m g
+. ./mfc.sh load -c f -m $([ "$2" = "gpu" ] && echo "g" || echo "c")
 
 $sbatch_script_contents
 
