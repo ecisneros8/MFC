@@ -49,6 +49,8 @@ contains
                     call s_check_circle_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 3) then
                     call s_check_rectangle_ib_patch_geometry(i)
+                else if (patch_ib(i)%geometry == 6) then
+                    call s_check_triangle_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 8) then
                     call s_check_sphere_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 9) then
@@ -65,7 +67,7 @@ contains
                 else
                     call s_prohibit_abort("Invalid IB patch", &
                                           "patch_ib("//trim(iStr)//")%geometry must be "// &
-                                          "2-4, 8-10, 11 or 12.")
+                                          "2-4, 6, 8-10, 11 or 12.")
                 end if
             else
                 @:PROHIBIT(patch_ib(i)%geometry /= dflt_int, "Inactive IB patch defined. "// &
@@ -160,6 +162,30 @@ contains
             'in rectangle IB patch '//trim(iStr))
 
     end subroutine s_check_rectangle_ib_patch_geometry
+
+        !>  This subroutine verifies that the geometric parameters of
+        !!      the triangle patch have consistently been inputted by
+        !!      the user.
+        !!  @param patch_id Patch identifier
+    impure subroutine s_check_triangle_ib_patch_geometry(patch_id)
+
+        integer, intent(in) :: patch_id
+
+        call s_int_to_str(patch_id, iStr)
+
+        @:PROHIBIT(n == 0 .or. p > 0 &
+            .or. &
+            f_is_default(patch_ib(patch_id)%x_centroid) &
+            .or. &
+            f_is_default(patch_ib(patch_id)%y_centroid) &
+            .or. &
+            patch_ib(patch_id)%length_x <= 0._wp &
+            .or. &
+            patch_ib(patch_id)%length_y == 0._wp, &
+            'in triangle IB patch '//trim(iStr))
+
+    end subroutine s_check_triangle_ib_patch_geometry
+        
 
     !>  This subroutine verifies that the geometric parameters of
         !!      the sphere patch have consistently been inputted by
