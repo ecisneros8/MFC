@@ -27,6 +27,7 @@ module m_body_forces
     real(wp) :: spbf_sigma
     real(wp), allocatable, dimension(:) :: freq, phase
     real(wp), allocatable, dimension(:, :, :) :: rhoM
+    $:GPU_DECLARE(create='[spbf_amp,spbf_xc,spbf_yc,spbf_conv_vel,spbf_sigma,freq,phase,rhoM]')
 
 contains
 
@@ -76,10 +77,13 @@ contains
 	   spbf_sigma = spatial_bf%sigma
 
     	   @:ALLOCATE(freq(spbf_num_freq), phase(spbf_num_freq))
+    	   @:PREFER_GPU(freq)
+    	   @:PREFER_GPU(phase)
     	   do f = 1, spbf_num_freq
 	      freq(f) = spatial_bf%freq(f)
 	      phase(f) = spatial_bf%phase(f)
 	   enddo
+	   $:GPU_UPDATE(device='[freq,phase]')
 
     end subroutine s_initialize_body_force_with_spatial_support
 
@@ -107,7 +111,7 @@ contains
 	integer :: f !< frequency iterator
 	integer :: i, j, k, l !< standard iterators
 
-	$:GPU_PARALLEL_LOOP(collapse=4)
+	$:GPU_PARALLEL_LOOP(private='[support,theta_x,theta_y,pre_fac,f,j,k,l]', collapse=3)
 	do l = 0, p
 	   do k = 0, n
 	      do j = 0, m
@@ -135,6 +139,7 @@ contains
 	      end do
 	   end do
 	end do
+	$:END_GPU_PARALLEL_LOOP()
     end subroutine s_compute_body_force_with_spatial_support
 
     !> This subroutine calculates the mixture density at each cell
@@ -197,7 +202,7 @@ contains
 
 	if (bf_spatial_support) then
 
-	   $:GPU_PARALLEL_LOOP(collapse=3)
+	   $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
 	   do l = 0, p
 	      do k = 0, n
 	      	 do j = 0, m
@@ -209,6 +214,7 @@ contains
 		 enddo
 	      enddo
 	   enddo
+	   $:END_GPU_PARALLEL_LOOP()
 	endif
 
         if (bf_x) then ! x-direction body forces
@@ -265,6 +271,10 @@ contains
     impure subroutine s_finalize_body_forces_module
 
         @:DEALLOCATE(rhoM)
+
+        if (bf_spatial_support) then
+            @:DEALLOCATE(freq, phase)
+        end if
 
     end subroutine s_finalize_body_forces_module
 
