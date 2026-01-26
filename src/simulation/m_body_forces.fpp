@@ -103,18 +103,19 @@ contains
     end subroutine s_compute_acceleration
 
     !> This routine applies the body force of Wei & Freund (JFM, 2005)
-    subroutine s_compute_body_force_with_spatial_support(t)
+    subroutine s_compute_body_force_with_spatial_support(t, bounds)
 
         real(wp), intent(in) :: t
+        type(int_bounds_info), dimension(1:3), intent(in) :: bounds
 	real(wp) :: support !< spatial support
 	real(wp) :: theta_x, theta_y, pre_fac !< auxiliary variables
 	integer :: f !< frequency iterator
 	integer :: i, j, k, l !< standard iterators
 
-	$:GPU_PARALLEL_LOOP(private='[support,theta_x,theta_y,pre_fac,f,j,k,l]', collapse=3)
-	do l = 0, p
-	   do k = 0, n
-	      do j = 0, m
+	$:GPU_PARALLEL_LOOP(private='[support,theta_x,theta_y,pre_fac,f,j,k,l]', collapse=3, copyin='[bounds]')
+	do l = bounds(3)%beg, bounds(3)%end
+	   do k = bounds(2)%beg, bounds(2)%end
+	      do j = bounds(1)%beg, bounds(1)%end
 	         support = exp(-spbf_sigma * &
 		 	   ((x_cc(j) - spbf_xc)**2 + (y_cc(k) - spbf_yc)**2))
 		 spbf_source_x(j, k, l) = 0._wp
@@ -145,15 +146,16 @@ contains
     !> This subroutine calculates the mixture density at each cell
     !! center
     !! param q_cons_vf Conservative variable
-    subroutine s_compute_mixture_density(q_cons_vf)
+    subroutine s_compute_mixture_density(q_cons_vf, bounds)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
+        type(int_bounds_info), dimension(1:3), intent(in) :: bounds
         integer :: i, j, k, l !< standard iterators
 
-        $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
-        do l = 0, p
-            do k = 0, n
-                do j = 0, m
+        $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3, copyin='[bounds]')
+        do l = bounds(3)%beg, bounds(3)%end
+            do k = bounds(2)%beg, bounds(2)%end
+                do j = bounds(1)%beg, bounds(1)%end
                     rhoM(j, k, l) = 0._wp
                     do i = 1, num_fluids
                         rhoM(j, k, l) = rhoM(j, k, l) + &
@@ -170,11 +172,13 @@ contains
     !! so the system can be advanced in time
     !! @param q_cons_vf Conservative variables
     !! @param q_prim_vf Primitive variables
-    subroutine s_compute_body_forces_rhs(q_prim_vf, q_cons_vf, rhs_vf)
+    !! @param bounds Interior cell bounds (to avoid applying forces on halo cells)
+    subroutine s_compute_body_forces_rhs(q_prim_vf, q_cons_vf, rhs_vf, bounds)
 
         type(scalar_field), dimension(sys_size), intent(in) :: q_prim_vf
         type(scalar_field), dimension(sys_size), intent(in) :: q_cons_vf
         type(scalar_field), dimension(sys_size), intent(inout) :: rhs_vf
+        type(int_bounds_info), dimension(1:3), intent(in) :: bounds
 
         integer :: i, j, k, l !< Loop variables
 
@@ -183,16 +187,16 @@ contains
 	endif
 
 	if (bf_spatial_support) then
-		call s_compute_body_force_with_spatial_support(mytime)
+		call s_compute_body_force_with_spatial_support(mytime, bounds)
 	endif
 
-        call s_compute_mixture_density(q_cons_vf)
+        call s_compute_mixture_density(q_cons_vf, bounds)
 
-        $:GPU_PARALLEL_LOOP(private='[i,j,k,l]', collapse=4)
+        $:GPU_PARALLEL_LOOP(private='[i,j,k,l]', collapse=4, copyin='[bounds]')
         do i = momxb, E_idx
-            do l = 0, p
-                do k = 0, n
-                    do j = 0, m
+            do l = bounds(3)%beg, bounds(3)%end
+                do k = bounds(2)%beg, bounds(2)%end
+                    do j = bounds(1)%beg, bounds(1)%end
                         rhs_vf(i)%sf(j, k, l) = 0._wp
                     end do
                 end do
@@ -202,10 +206,10 @@ contains
 
 	if (bf_spatial_support) then
 
-	   $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
-	   do l = 0, p
-	      do k = 0, n
-	      	 do j = 0, m
+	   $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3, copyin='[bounds]')
+	   do l = bounds(3)%beg, bounds(3)%end
+	      do k = bounds(2)%beg, bounds(2)%end
+	      	 do j = bounds(1)%beg, bounds(1)%end
 		    rhs_vf(momxb)%sf(j, k, l) = rhs_vf(momxb)%sf(j, k, l) + &
 		    			      	spbf_source_x(j, k, l)
 		    rhs_vf(momxb + 1)%sf(j, k, l) = rhs_vf(momxb + 1)%sf(j, k, l) + &
@@ -219,10 +223,10 @@ contains
 
         if (bf_x) then ! x-direction body forces
 
-            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
-            do l = 0, p
-                do k = 0, n
-                    do j = 0, m
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3, copyin='[bounds]')
+            do l = bounds(3)%beg, bounds(3)%end
+                do k = bounds(2)%beg, bounds(2)%end
+                    do j = bounds(1)%beg, bounds(1)%end
                         rhs_vf(momxb)%sf(j, k, l) = rhs_vf(momxb)%sf(j, k, l) + &
                                                     rhoM(j, k, l)*accel_bf(1)
                         rhs_vf(E_idx)%sf(j, k, l) = rhs_vf(E_idx)%sf(j, k, l) + &
@@ -235,10 +239,10 @@ contains
 
         if (bf_y) then ! y-direction body forces
 
-            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
-            do l = 0, p
-                do k = 0, n
-                    do j = 0, m
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3, copyin='[bounds]')
+            do l = bounds(3)%beg, bounds(3)%end
+                do k = bounds(2)%beg, bounds(2)%end
+                    do j = bounds(1)%beg, bounds(1)%end
                         rhs_vf(momxb + 1)%sf(j, k, l) = rhs_vf(momxb + 1)%sf(j, k, l) + &
                                                         rhoM(j, k, l)*accel_bf(2)
                         rhs_vf(E_idx)%sf(j, k, l) = rhs_vf(E_idx)%sf(j, k, l) + &
@@ -251,10 +255,10 @@ contains
 
         if (bf_z) then ! z-direction body forces
 
-            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3)
-            do l = 0, p
-                do k = 0, n
-                    do j = 0, m
+            $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3, copyin='[bounds]')
+            do l = bounds(3)%beg, bounds(3)%end
+                do k = bounds(2)%beg, bounds(2)%end
+                    do j = bounds(1)%beg, bounds(1)%end
                         rhs_vf(momxe)%sf(j, k, l) = rhs_vf(momxe)%sf(j, k, l) + &
                                                     rhoM(j, k, l)*accel_bf(3)
                         rhs_vf(E_idx)%sf(j, k, l) = rhs_vf(E_idx)%sf(j, k, l) + &

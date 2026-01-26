@@ -634,10 +634,36 @@ contains
             @:ALLOCATE(nbub(0:m, 0:n, 0:p))
         end if
 
-	@:ALLOCATE(spbf_source_x(-buff_size:buff_size + m, &
-		-buff_size:buff_size + n, 0:0))
-	@:ALLOCATE(spbf_source_y(-buff_size:buff_size + m, &
-		-buff_size:buff_size + n, 0:0))
+        ! Allocate spatial body force arrays with proper dimensionality
+        if (n > 0) then
+            if (p > 0) then
+                ! 3D simulation
+                @:ALLOCATE(spbf_source_x(-buff_size:buff_size + m, &
+                    -buff_size:buff_size + n, &
+                    -buff_size:buff_size + p))
+                @:ALLOCATE(spbf_source_y(-buff_size:buff_size + m, &
+                    -buff_size:buff_size + n, &
+                    -buff_size:buff_size + p))
+            else
+                ! 2D simulation
+                @:ALLOCATE(spbf_source_x(-buff_size:buff_size + m, &
+                    -buff_size:buff_size + n, &
+                    0:0))
+                @:ALLOCATE(spbf_source_y(-buff_size:buff_size + m, &
+                    -buff_size:buff_size + n, &
+                    0:0))
+            end if
+        else
+            ! 1D simulation
+            @:ALLOCATE(spbf_source_x(-buff_size:buff_size + m, &
+                0:0, &
+                0:0))
+            @:ALLOCATE(spbf_source_y(-buff_size:buff_size + m, &
+                0:0, &
+                0:0))
+        end if
+        @:PREFER_GPU(spbf_source_x)
+        @:PREFER_GPU(spbf_source_y)
 
     end subroutine s_initialize_rhs_module
 
