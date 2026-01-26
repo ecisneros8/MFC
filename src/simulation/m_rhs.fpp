@@ -665,6 +665,11 @@ contains
         @:PREFER_GPU(spbf_source_x)
         @:PREFER_GPU(spbf_source_y)
 
+        ! Initialize arrays to zero to prevent garbage values on GPU
+        spbf_source_x = 0._wp
+        spbf_source_y = 0._wp
+        $:GPU_UPDATE(device='[spbf_source_x,spbf_source_y]')
+
     end subroutine s_initialize_rhs_module
 
     impure subroutine s_compute_rhs(q_cons_vf, q_T_sf, q_prim_vf, bc_type, rhs_vf, pb_in, rhs_pb, mv_in, rhs_mv, t_step, time_avg, stage)

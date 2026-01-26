@@ -83,7 +83,7 @@ contains
 	      freq(f) = spatial_bf%freq(f)
 	      phase(f) = spatial_bf%phase(f)
 	   enddo
-	   $:GPU_UPDATE(device='[freq,phase]')
+	   $:GPU_UPDATE(device='[spbf_amp,spbf_xc,spbf_yc,spbf_conv_vel,spbf_sigma,freq,phase]')
 
     end subroutine s_initialize_body_force_with_spatial_support
 
@@ -111,6 +111,22 @@ contains
 	real(wp) :: theta_x, theta_y, pre_fac !< auxiliary variables
 	integer :: f !< frequency iterator
 	integer :: i, j, k, l !< standard iterators
+
+	! Safety check: if convective velocity is too small, skip computation
+	if (abs(spbf_conv_vel) < 1.0e-12_wp) then
+	    ! Initialize arrays to zero and return
+	    $:GPU_PARALLEL_LOOP(private='[j,k,l]', collapse=3, copyin='[bounds]')
+	    do l = bounds(3)%beg, bounds(3)%end
+	       do k = bounds(2)%beg, bounds(2)%end
+	          do j = bounds(1)%beg, bounds(1)%end
+	             spbf_source_x(j, k, l) = 0._wp
+	             spbf_source_y(j, k, l) = 0._wp
+	          end do
+	       end do
+	    end do
+	    $:END_GPU_PARALLEL_LOOP()
+	    return
+	end if
 
 	$:GPU_PARALLEL_LOOP(private='[support,theta_x,theta_y,pre_fac,f,j,k,l]', collapse=3, copyin='[bounds]')
 	do l = bounds(3)%beg, bounds(3)%end
