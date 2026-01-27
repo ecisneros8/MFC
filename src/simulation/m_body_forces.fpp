@@ -139,9 +139,11 @@ contains
 		 do f = 1, spbf_num_freq
 		    pre_fac = (freq(f) / spbf_conv_vel)
 		    theta_x = pre_fac * &
-		    	      (x_cc(j) - spbf_xc - spbf_conv_vel * t) + &
+		    	      (x_cc(j) - spbf_xc) + &
 			      phase(f)
-		    theta_y = pre_fac * (y_cc(k) - spbf_yc) + phase(f)
+		    theta_y = pre_fac * &
+		    	      (y_cc(k) - spbf_yc - spbf_conv_vel * t) + &
+			      phase(f)
 		    spbf_source_x(j, k, l) = spbf_source_x(j, k, l) + &
 		     		      	    spbf_amp * support * ( &
 					    pre_fac * sin(theta_x) * cos(theta_y) - &
