@@ -971,7 +971,6 @@ contains
                 end if
 
                 ! RHS additions for qbmm bubbles
-
                 if (qbmm) then
                     call nvtxStartRange("RHS-QBMM")
                     call s_compute_qbmm_rhs(id, &
