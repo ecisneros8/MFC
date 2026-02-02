@@ -23,7 +23,8 @@ module m_compute_levelset
  s_3D_airfoil_levelset, &
  s_rectangle_levelset, &
  s_cuboid_levelset, &
- s_sphere_levelset
+ s_sphere_levelset, &
+ s_triangle_levelset
 
 contains
 
@@ -336,7 +337,86 @@ contains
 
     end subroutine s_rectangle_levelset
 
-    subroutine s_cuboid_levelset(ib_patch_id, levelset, levelset_norm)
+    pure subroutine s_triangle_levelset(ib_patch_id, levelset, levelset_norm)
+        ! use mod_precision
+        implicit none
+
+        type(levelset_field), intent(INOUT), optional :: levelset
+        type(levelset_norm_field), intent(INOUT), optional :: levelset_norm
+        integer, intent(in) :: ib_patch_id
+
+        ! Triangle vertices
+        real(wp) :: x1, y1, x2, y2, x3, y3
+        real(wp) :: a(3), b(3), c(3), norm(3)
+        real(wp) :: x, y, d(3), min_dist
+        real(wp) :: length_x, length_y, x_corner, y_corner
+        integer :: i, j, k, idx
+
+        ! Fetch triangle data from patch
+        length_x = patch_ib(ib_patch_id)%length_x
+        length_y = patch_ib(ib_patch_id)%length_y
+        x_corner = patch_ib(ib_patch_id)%x_centroid
+        y_corner = patch_ib(ib_patch_id)%y_centroid
+
+        !> Bottom Corner - With symmetry 
+        x1 = x_corner
+        y1 = y_corner - length_y
+        !> Leading point
+        x2 = x_corner - length_x
+        y2 = y_corner
+        !> Top point
+        x3 = x_corner
+        y3 = y_corner + length_y
+
+        ! Compute line coefficients for edges
+        a(1) = y2 - y3;  b(1) = x3 - x2;  c(1) = x2*y3 - x3*y2
+        a(2) = y3 - y1;  b(2) = x1 - x3;  c(2) = x3*y1 - x1*y3
+        a(3) = y1 - y2;  b(3) = x2 - x1;  c(3) = x1*y2 - x2*y1
+
+        ! Precompute edge normal magnitudes
+        norm = sqrt(a**2 + b**2)
+
+        ! Loop over grid
+        do j = 0, n
+            do i = 0, m
+                x = x_cc(i)
+                y = y_cc(j)
+
+                ! Signed distances to each edge
+                do k = 1, 3
+                    d(k) = (a(k)*x + b(k)*y + c(k)) / norm(k)
+                end do
+
+                ! Pick smallest absolute distance
+                min_dist = abs(d(1))
+                idx = 1
+                do k = 2, 3
+                    if (abs(d(k)) < abs(min_dist)) then
+                        min_dist = d(k)
+                        idx = k
+                    end if
+                end do
+
+                ! Assign levelset signed distance
+                levelset%sf(i, j, 0, ib_patch_id) = d(idx)
+
+                ! Assign corresponding normal components
+                if (present(levelset_norm)) then
+                    if (norm(idx) > 0._wp) then
+                        levelset_norm%sf(i, j, 0, ib_patch_id, 1) = a(idx) / norm(idx)
+                        levelset_norm%sf(i, j, 0, ib_patch_id, 2) = b(idx) / norm(idx)
+                    else
+                        levelset_norm%sf(i, j, 0, ib_patch_id, 1) = 0._wp
+                        levelset_norm%sf(i, j, 0, ib_patch_id, 2) = 0._wp
+                    end if
+                end if
+
+            end do
+        end do
+
+    end subroutine s_triangle_levelset
+
+    pure subroutine s_cuboid_levelset(ib_patch_id, levelset, levelset_norm)
 
         type(levelset_field), intent(INOUT), optional :: levelset
         type(levelset_norm_field), intent(INOUT), optional :: levelset_norm

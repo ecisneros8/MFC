@@ -59,7 +59,7 @@ o-gpu nvhpc cuda/12.3.0 cmake/3.26.3
 o-gpu CC=nvc CXX=nvc++ FC=nvfortran
 
 dai     NCSA DeltaAI
-dai-all python cmake nvhpc-openmpi3/24.3 cuda
+dai-all cmake nvhpc-openmpi3/24.3 cuda
 dai-all CC=nvc CXX=nvc++ FC=nvfortran
 dai-gpu MFC_CUDA_CC=89,90
 
@@ -91,3 +91,7 @@ h-all OMPI_MCA_pml=ob1 OMPI_MCA_coll_hcoll_enable=0
 h-gpu PATH="/apps/mpi/cuda/12.8.1/nvhpc/25.3/openmpi/5.0.7/bin:${PATH}"
 h-all LD_LIBRARY_PATH=/apps/compilers/cuda/12.8.1/lib64:$LD_LIBRARY_PATH
 h-gpu MFC_CUDA_CC=100 NVHPC_CUDA_HOME="/apps/compilers/cuda/12.8.1"
+
+i     Tennessee Isaac
+i-all openmpi/4.0.5-gcc
+i-cpu openmpi/4.0.5-gcc

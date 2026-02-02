@@ -1,4 +1,4 @@
-!>
+!
 !! @file m_patches.fpp
 !! @brief Contains module m_patches
 
@@ -163,6 +163,7 @@ contains
                 !> @}
             end do
 
+            !> @}
             ! 1D Patch Geometries
         else
 
@@ -335,8 +336,7 @@ contains
 
     end subroutine s_icpp_spiral
 
-    !> The circular patch is a 2D geometry that may be used, for
-        !!              example, in creating a bubble or a droplet. The geometry
+
         !!              of the patch is well-defined when its centroid and radius
         !!              are provided. Note that the circular patch DOES allow for
         !!              the smoothing of its boundary.
