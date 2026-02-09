@@ -13,10 +13,6 @@
 % if account:
 #SBATCH --account="${account}"
 % endif
-% if gpu:
-#SBATCH --gpu-bind=verbose,closest
-#SBATCH --gres=gpu:v100-16:${tasks_per_node}
-% endif
 #SBATCH --output="${name}.out"
 #SBATCH --error="${name}.err"
 #SBATCH --export=ALL
