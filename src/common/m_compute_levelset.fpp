@@ -340,82 +340,90 @@ contains
 
     end subroutine s_rectangle_levelset
 
-    pure subroutine s_triangle_levelset(ib_patch_id, levelset, levelset_norm)
-        ! use mod_precision
-        implicit none
+    subroutine s_triangle_levelset(ib_patch_id, levelset, levelset_norm)
 
         type(levelset_field), intent(INOUT), optional :: levelset
         type(levelset_norm_field), intent(INOUT), optional :: levelset_norm
+
         integer, intent(in) :: ib_patch_id
+        real(wp) :: min_dist
+        real(wp) :: side_dists(3)
 
-        ! Triangle vertices
-        real(wp) :: x1, y1, x2, y2, x3, y3
-        real(wp) :: a(3), b(3), c(3), norm(3)
-        real(wp) :: x, y, d(3), min_dist
-        real(wp) :: length_x, length_y, x_corner, y_corner
-        integer :: i, j, k, idx
+        real(wp) :: a, b, hyp_norm
+        real(wp), dimension(1:3) :: xy_local, dist_vec
+        real(wp), dimension(2) :: center
+        real(wp), dimension(1:3, 1:3) :: rotation, inverse_rotation
 
-        ! Fetch triangle data from patch
-        length_x = patch_ib(ib_patch_id)%length_x
-        length_y = patch_ib(ib_patch_id)%length_y
-        x_corner = patch_ib(ib_patch_id)%x_centroid
-        y_corner = patch_ib(ib_patch_id)%y_centroid
+        integer :: i, j, k
+        integer :: idx
 
-        !> Bottom Corner - With symmetry
-        x1 = x_corner
-        y1 = y_corner - length_y
-        !> Leading point
-        x2 = x_corner - length_x
-        y2 = y_corner
-        !> Top point
-        x3 = x_corner
-        y3 = y_corner + length_y
+        a = patch_ib(ib_patch_id)%length_x
+        b = patch_ib(ib_patch_id)%length_y
+        center(1) = patch_ib(ib_patch_id)%x_centroid
+        center(2) = patch_ib(ib_patch_id)%y_centroid
+        inverse_rotation(:, :) = patch_ib(ib_patch_id)%rotation_matrix_inverse(:, :)
+        rotation(:, :) = patch_ib(ib_patch_id)%rotation_matrix(:, :)
 
-        ! Compute line coefficients for edges
-        a(1) = y2 - y3; b(1) = x3 - x2; c(1) = x2*y3 - x3*y2
-        a(2) = y3 - y1; b(2) = x1 - x3; c(2) = x3*y1 - x1*y3
-        a(3) = y1 - y2; b(3) = x2 - x1; c(3) = x1*y2 - x2*y1
+        hyp_norm = sqrt(a**2 + b**2)
 
-        ! Precompute edge normal magnitudes
-        norm = sqrt(a**2 + b**2)
+        ! Right triangle in local coordinates (centered on centroid),
+        ! matching the geometry in s_ib_triangle:
+        !   V1 = (-a/3, -b/3)   right-angle vertex
+        !   V2 = ( 2a/3, -b/3)  bottom-right vertex
+        !   V3 = (-a/3,  2b/3)  top-left vertex
+        !
+        ! Edges:
+        !   Bottom (V1->V2): y = -b/3,  outward normal (0, -1)
+        !   Left   (V1->V3): x = -a/3,  outward normal (-1, 0)
+        !   Hyp    (V2->V3): b*x + a*y = ab/3, outward normal (b, a)/hyp_norm
 
-        ! Loop over grid
-        do j = 0, n
-            do i = 0, m
-                x = x_cc(i)
-                y = y_cc(j)
+        $:GPU_PARALLEL_LOOP(private='[i,j,k,min_dist,idx,side_dists,xy_local,dist_vec]', &
+                  & copyin='[ib_patch_id,center,a,b,hyp_norm,inverse_rotation,rotation]', collapse=2)
+        do i = 0, m
+            do j = 0, n
+                xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp]
+                xy_local = matmul(inverse_rotation, xy_local)
 
-                ! Signed distances to each edge
-                do k = 1, 3
-                    d(k) = (a(k)*x + b(k)*y + c(k))/norm(k)
-                end do
+                if ((xy_local(1) > -a/3._wp .and. xy_local(1) < 2._wp*a/3._wp) .or. &
+                    (xy_local(2) > -b/3._wp .and. xy_local(2) < 2._wp*b/3._wp)) then
 
-                ! Pick smallest absolute distance
-                min_dist = abs(d(1))
-                idx = 1
-                do k = 2, 3
-                    if (abs(d(k)) < abs(min_dist)) then
-                        min_dist = d(k)
-                        idx = k
-                    end if
-                end do
+                    ! Signed distances to each edge (negative inside triangle)
+                    side_dists(1) = -b/3._wp - xy_local(2)
+                    side_dists(2) = -a/3._wp - xy_local(1)
+                    side_dists(3) = (b*xy_local(1) + a*xy_local(2) - a*b/3._wp)/hyp_norm
 
-                ! Assign levelset signed distance
-                levelset%sf(i, j, 0, ib_patch_id) = d(idx)
+                    min_dist = abs(side_dists(1))
+                    idx = 1
+                    do k = 2, 3
+                        if (abs(side_dists(k)) < min_dist) then
+                            idx = k
+                            min_dist = abs(side_dists(k))
+                        end if
+                    end do
 
-                ! Assign corresponding normal components
-                if (present(levelset_norm)) then
-                    if (norm(idx) > 0._wp) then
-                        levelset_norm%sf(i, j, 0, ib_patch_id, 1) = a(idx)/norm(idx)
-                        levelset_norm%sf(i, j, 0, ib_patch_id, 2) = b(idx)/norm(idx)
+                    levelset%sf(i, j, 0, ib_patch_id) = side_dists(idx)
+                    dist_vec = 0._wp
+                    if (.not. f_approx_equal(side_dists(idx), 0._wp)) then
+                        if (idx == 1) then
+                            ! Bottom edge: normal along y-axis
+                            dist_vec(2) = side_dists(1)/abs(side_dists(1))
+                        else if (idx == 2) then
+                            ! Left edge: normal along x-axis
+                            dist_vec(1) = side_dists(2)/abs(side_dists(2))
+                        else
+                            ! Hypotenuse: outward normal is (b, a)/hyp_norm
+                            dist_vec(1) = -side_dists(3)/abs(side_dists(3))*b/hyp_norm
+                            dist_vec(2) = -side_dists(3)/abs(side_dists(3))*a/hyp_norm
+                        end if
+                        ! Convert normal back to global coordinates
+                        levelset_norm%sf(i, j, 0, ib_patch_id, :) = matmul(rotation, dist_vec)
                     else
-                        levelset_norm%sf(i, j, 0, ib_patch_id, 1) = 0._wp
-                        levelset_norm%sf(i, j, 0, ib_patch_id, 2) = 0._wp
+                        levelset_norm%sf(i, j, 0, ib_patch_id, :) = 0._wp
                     end if
                 end if
-
             end do
         end do
+        $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_triangle_levelset
 
