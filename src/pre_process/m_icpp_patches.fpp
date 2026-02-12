@@ -336,7 +336,6 @@ contains
 
     end subroutine s_icpp_spiral
 
-
         !!              of the patch is well-defined when its centroid and radius
         !!              are provided. Note that the circular patch DOES allow for
         !!              the smoothing of its boundary.

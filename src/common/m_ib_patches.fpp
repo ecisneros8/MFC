@@ -119,8 +119,10 @@ contains
                     ! STL+IBM patch
                 elseif (patch_ib(i)%geometry == 5) then
                     call s_ib_model(i, ib_markers_sf, levelset, levelset_norm)
-                    !> Addition from Seth Brolliar - Triangular IB patch
                 elseif (patch_ib(i)%geometry == 6) then
+                    call s_ib_ellipse(i, ib_markers_sf)
+                    call s_ellipse_levelset(i, levelset, levelset_norm)
+                elseif (patch_ib(i)%geometry == 7) then
                     call s_ib_triangle(i, ib_markers_sf)
                     call s_triangle_levelset(i, levelset, levelset_norm)
                 end if
@@ -181,7 +183,7 @@ contains
 
     end subroutine s_ib_circle
 
-        !> The triangular patch is a 2D geometry.
+    !> The triangular patch is a 2D geometry.
         !! @param patch_id is the patch identifier
         !! @param ib_markers_sf Array to track patch ids
     subroutine s_ib_triangle(patch_id, ib_markers_sf)
@@ -190,17 +192,17 @@ contains
         integer, dimension(0:m, 0:n, 0:p), intent(inout) :: ib_markers_sf
 
         integer :: i, j, k !< Generic loop iterators
-	real(wp) :: a, b, xv, yv
+        real(wp) :: a, b, xv, yv
         real(wp), dimension(1:3) :: xy_local
         real(wp), dimension(1:2) :: length, center
-	real(wp), dimension(1:3, 1:3) :: inverse_rotation
+        real(wp), dimension(1:3, 1:3) :: inverse_rotation
 
         !> Transferring the triangle's centroid, length and rotation matrix
         center(1) = patch_ib(patch_id)%x_centroid
         center(2) = patch_ib(patch_id)%y_centroid
         length(1) = patch_ib(patch_id)%length_x
         length(2) = patch_ib(patch_id)%length_y
-	inverse_rotation(:, :) = patch_ib(patch_id)%rotation_matrix_inverse(:, :)
+        inverse_rotation(:, :) = patch_ib(patch_id)%rotation_matrix_inverse(:, :)
 
         ! Since the triangular patch does not allow for its boundaries to
         ! be smoothed out, the pseudo volume fraction is set to 1 to ensure
@@ -212,27 +214,26 @@ contains
         ! domain and verifying whether the current patch has the permission
         ! to write to that cell. If both queries check out, the primitive
         ! variables of the current patch are assigned to this cell.
-	$:GPU_PARALLEL_LOOP(private='[i,j,xy_local]', copy='[ib_markers_sf]', &
-	    & copyin='[patch_id,center,length,inverse_rotation,x_cc,y_cc]', collapse=2)
+        $:GPU_PARALLEL_LOOP(private='[i,j,xy_local]', copy='[ib_markers_sf]', &
+            & copyin='[patch_id,center,length,inverse_rotation,x_cc,y_cc]', collapse=2)
         do j = 0, n
             do i = 0, m
                 xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp]
-		xy_local = matmul(inverse_rotation, xy_local)
-		a = length(1)
-		b = length(2)
-		xv = xy_local(1) + a / 3._wp
-		yv = xy_local(2) + b / 3._wp
-		if (xv >= 0._wp .and. xv <= a .and. &
-		    yv >= 0._wp .and. yv <= b .and. &
-		    yv <= (-b/a)*xv + b) then
-		    ib_markers_sf(i, j, 0) = patch_id
-		end if
+                xy_local = matmul(inverse_rotation, xy_local)
+                a = length(1)
+                b = length(2)
+                xv = xy_local(1) + a/3._wp
+                yv = xy_local(2) + b/3._wp
+                if (xv >= 0._wp .and. xv <= a .and. &
+                    yv >= 0._wp .and. yv <= b .and. &
+                    yv <= (-b/a)*xv + b) then
+                    ib_markers_sf(i, j, 0) = patch_id
+                end if
             end do
         end do
-	$:END_GPU_PARALLEL_LOOP()
+        $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_ib_triangle
-
 
     !! @param patch_id is the patch identifier
     !! @param ib_markers_sf Array to track patch ids
@@ -333,6 +334,7 @@ contains
             do i = 0, m
                 xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp] ! get coordinate frame centered on IB
                 xy_local = matmul(inverse_rotation, xy_local) ! rotate the frame into the IB's coordinates
+                xy_local = xy_local - patch_ib(patch_id)%centroid_offset ! airfoils are a patch that require a centroid offset
 
                 if (xy_local(1) >= 0._wp .and. xy_local(1) <= ca_in) then
                     xa = xy_local(1)/ca_in
@@ -487,6 +489,7 @@ contains
                 do i = 0, m
                     xyz_local = [x_cc(i) - center(1), y_cc(j) - center(2), z_cc(l) - center(3)] ! get coordinate frame centered on IB
                     xyz_local = matmul(inverse_rotation, xyz_local) ! rotate the frame into the IB's coordinates
+                    xyz_local = xyz_local - patch_ib(patch_id)%centroid_offset ! airfoils are a patch that require a centroid offset
 
                     if (xyz_local(3) >= z_min .and. xyz_local(3) <= z_max) then
 
@@ -601,8 +604,6 @@ contains
         $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_ib_rectangle
-
-    
 
     !>          The spherical patch is a 3D geometry that may be used,
         !!              for example, in creating a bubble or a droplet. The patch
@@ -820,6 +821,45 @@ contains
         $:END_GPU_PARALLEL_LOOP()
 
     end subroutine s_ib_cylinder
+
+    subroutine s_ib_ellipse(patch_id, ib_markers_sf)
+
+        integer, intent(in) :: patch_id
+        integer, dimension(0:m, 0:n, 0:p), intent(inout) :: ib_markers_sf
+
+        integer :: i, j, k !< generic loop iterators
+        real(wp), dimension(1:3) :: xy_local !< x and y coordinates in local IB frame
+        real(wp), dimension(1:2) :: ellipse_coeffs !< a and b in the ellipse coefficients
+        real(wp), dimension(1:2) :: center !< x and y coordinates in local IB frame
+        real(wp), dimension(1:3, 1:3) :: inverse_rotation
+
+        ! Transferring the ellipse's centroid and length information
+        center(1) = patch_ib(patch_id)%x_centroid
+        center(2) = patch_ib(patch_id)%y_centroid
+        ellipse_coeffs(1) = 0.5_wp*patch_ib(patch_id)%length_x
+        ellipse_coeffs(2) = 0.5_wp*patch_ib(patch_id)%length_y
+        inverse_rotation(:, :) = patch_ib(patch_id)%rotation_matrix_inverse(:, :)
+
+        ! Checking whether the ellipse covers a particular cell in the
+        ! domain
+        $:GPU_PARALLEL_LOOP(private='[i,j, xy_local]', copy='[ib_markers_sf]',&
+                  & copyin='[patch_id,center,ellipse_coeffs,inverse_rotation,x_cc,y_cc]', collapse=2)
+        do j = 0, n
+            do i = 0, m
+                ! get the x and y coordinates in the local IB frame
+                xy_local = [x_cc(i) - center(1), y_cc(j) - center(2), 0._wp]
+                xy_local = matmul(inverse_rotation, xy_local)
+
+                ! Ellipse condition (x/a)^2 + (y/b)^2 <= 1
+                if ((xy_local(1)/ellipse_coeffs(1))**2 + (xy_local(2)/ellipse_coeffs(2))**2 <= 1._wp) then
+                    ! Updating the patch identities bookkeeping variable
+                    ib_markers_sf(i, j, 0) = patch_id
+                end if
+            end do
+        end do
+        $:END_GPU_PARALLEL_LOOP()
+
+    end subroutine s_ib_ellipse
 
     !> The STL patch is a 2/3D geometry that is imported from an STL file.
     !! @param patch_id is the patch identifier

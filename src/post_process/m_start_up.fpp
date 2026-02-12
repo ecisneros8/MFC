@@ -112,7 +112,7 @@ contains
             relax_model, cf_wrt, sigma, adv_n, ib, num_ibs, &
             cfl_adap_dt, cfl_const_dt, t_save, t_stop, n_start, &
             cfl_target, surface_tension, bubbles_lagrange, &
-            sim_data, hyperelasticity, Bx0, relativity, cont_damage, &
+            sim_data, hyperelasticity, Bx0, relativity, cont_damage, hyper_cleaning, &
             num_bc_patches, igr, igr_order, down_sample, recon_type, &
             muscl_order, lag_header, lag_txt_wrt, lag_db_wrt, &
             lag_id_wrt, lag_pos_wrt, lag_pos_prev_wrt, lag_vel_wrt, &
@@ -600,6 +600,14 @@ contains
             varname(:) = ' '
         end if
 
+        if (hyper_cleaning) then
+            q_sf = q_cons_vf(psi_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
+            write (varname, '(A)') 'psi'
+            call s_write_variable_to_formatted_database_file(varname, t_step)
+
+            varname(:) = ' '
+        end if
+
         ! Adding the pressure to the formatted database file
         if (pres_wrt .or. prim_vars_wrt) then
             q_sf(:, :, :) = q_prim_vf(E_idx)%sf(x_beg:x_end, y_beg:y_end, z_beg:z_end)
@@ -712,7 +720,7 @@ contains
                         pres = q_prim_vf(E_idx)%sf(i, j, k)
 
                         H = ((gamma_sf(i, j, k) + 1._wp)*pres + &
-                             pi_inf_sf(i, j, k))/rho_sf(i, j, k)
+                             pi_inf_sf(i, j, k) + qv_sf(i, j, k))/rho_sf(i, j, k)
 
                         call s_compute_speed_of_sound(pres, rho_sf(i, j, k), &
                                                       gamma_sf(i, j, k), pi_inf_sf(i, j, k), &
