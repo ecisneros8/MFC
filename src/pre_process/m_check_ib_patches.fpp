@@ -49,7 +49,7 @@ contains
                     call s_check_circle_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 3) then
                     call s_check_rectangle_ib_patch_geometry(i)
-                else if (patch_ib(i)%geometry == 6) then
+                else if (patch_ib(i)%geometry == 7) then
                     call s_check_triangle_ib_patch_geometry(i)
                 else if (patch_ib(i)%geometry == 8) then
                     call s_check_sphere_ib_patch_geometry(i)
@@ -69,7 +69,7 @@ contains
                 else
                     call s_prohibit_abort("Invalid IB patch", &
                                           "patch_ib("//trim(iStr)//")%geometry must be "// &
-                                          "2-4, 6, 8-10, 11 or 12.")
+                                          "2-12.")
                 end if
             else
                 @:PROHIBIT(patch_ib(i)%geometry /= dflt_int, "Inactive IB patch defined. "// &
