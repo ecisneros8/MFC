@@ -139,7 +139,7 @@ contains
 		 do f = 1, spbf_num_freq
 		    pre_fac = (freq(f) / spbf_conv_vel)
 		    theta_x = pre_fac * &
-		    	      (x_cc(j) - spbf_xc) + &
+		    	      (x_cc(j) - spbf_xc - spbf_conv_vel * t) + &
 			      phase(f)
 		    theta_y = pre_fac * &
 		    	      (y_cc(k) - spbf_yc - spbf_conv_vel * t) + &

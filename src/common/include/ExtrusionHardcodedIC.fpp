@@ -48,7 +48,7 @@
     real(wp), allocatable :: x_coords(:), y_coords(:)
     logical :: files_loaded = .false.
     real(wp) :: domain_xstart, domain_xend, domain_ystart, domain_yend
-    character(len=*), parameter :: init_dir = "/home/MFC/FilesDirectory" ! For example /home/MFC/examples/1D_Shock/D/
+    character(len=*), parameter :: init_dir = "/Users/ecisneros/Projects/mfc-acoustics/reac/init_data/" ! For example /home/MFC/examples/1D_Shock/D/
     character(len=20) :: file_num_str     ! For storing the file number as a string
     character(len=20) :: zeros_part       ! For the trailing zeros part
     character(len=6), parameter :: zeros_default = "000000"  ! Default zeros (can be changed)
@@ -174,26 +174,33 @@
     select case (num_dims)
     case (1)
         idx = i + 1 + global_offset_x
+        ! Clamp to valid range to handle boundary/ghost cells
+        idx = max(1, min(idx, xRows))
         do f = 1, sys_size
             q_prim_vf(f)%sf(i, 0, 0) = stored_values(idx, 1, f)
         end do
 
     case (2)
         idx = i + 1 + global_offset_x - index_x
+        ! Clamp to valid range to handle boundary/ghost cells
+        idx = max(1, min(idx, xRows))
         do f = 1, sys_size - 1
-            jump = merge(1, 0, f >= momxe)
+            jump = merge(1, 0, f >= momxb)
             q_prim_vf(f + jump)%sf(i, j, 0) = stored_values(idx, 1, f)
         end do
-        q_prim_vf(momxe)%sf(i, j, 0) = 0.0_wp
+        q_prim_vf(momxb)%sf(i, j, 0) = 0.0_wp
 
     case (3)
         idx = i + 1 + global_offset_x - index_x
         idy = j + 1 + global_offset_y - index_y
-        do f = 1, sys_size - 1
+        ! Clamp to valid range to handle boundary/ghost cells
+        idx = max(1, min(idx, xRows))
+        idy = max(1, min(idy, yRows))
+        do f = 1, sys_size
             jump = merge(1, 0, f >= momxe)
             q_prim_vf(f + jump)%sf(i, j, k) = stored_values(idx, idy, f)
         end do
-        q_prim_vf(momxe)%sf(i, j, k) = 0.0_wp
+	q_prim_vf(momxe)%sf(i, j, k) = 0.0_wp
     end select
 #:enddef
 
