@@ -5,12 +5,15 @@
 # - viscous : T
 # - igr_order : 5
 
-import json, math, argparse
+import argparse
+import json
+import math
 
 parser = argparse.ArgumentParser(prog="Benchmarking Case 5", description="This MFC case was created for the purposes of benchmarking MFC.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument("--mfc", type=json.loads, default="{}", metavar="DICT", help="MFC's toolchain's internal state.")
 parser.add_argument("--gbpp", type=int, metavar="MEM", default=16, help="Adjusts the problem size per rank to fit into [MEM] GB of GPU memory per GPU.")
+parser.add_argument("--steps", type=int, default=None, help="Override t_step_stop/t_step_save.")
 
 ARGS = vars(parser.parse_args())
 DICT = ARGS["mfc"]
@@ -46,7 +49,7 @@ print(
     json.dumps(
         {
             # Logistics
-            "run_time_info": "T",
+            "run_time_info": "F",
             # Computational Domain Parameters
             "x_domain%beg": -math.pi * L,
             "x_domain%end": math.pi * L,
@@ -60,12 +63,13 @@ print(
             "cyl_coord": "F",
             "dt": dt,
             "t_step_start": 0,
-            "t_step_stop": int(20 * (5 * size + 5)),
-            "t_step_save": int(20 * (5 * size + 5)),
+            "t_step_stop": ARGS["steps"] if ARGS["steps"] is not None else int(2 * (5 * size + 5)),
+            "t_step_save": ARGS["steps"] if ARGS["steps"] is not None else int(2 * (5 * size + 5)),
             # Simulation Algorithm Parameters
             "num_patches": 1,
             "model_eqns": 2,
             "num_fluids": 1,
+            "riemann_solver": 5,
             "time_stepper": 3,
             "bc_x%beg": -1,
             "bc_x%end": -1,
@@ -89,7 +93,7 @@ print(
             "omega_wrt(3)": "T",
             "qm_wrt": "T",
             "fd_order": 4,
-            "parallel_io": "T",
+            "parallel_io": "F",
             # Patch 1: Background (AIR - 2)
             "patch_icpp(1)%geometry": 9,
             "patch_icpp(1)%x_centroid": 0,

@@ -1,44 +1,30 @@
 !>
-!! @file m_mpi_proxy.f90
+!! @file
 !! @brief Contains module m_mpi_proxy
 
-!> @brief This module serves as a proxy to the parameters and subroutines
-!!              available in the MPI implementation's MPI module. Specifically,
-!!              the role of the proxy is to harness basic MPI commands into more
-!!              complex procedures as to achieve the required pre-processing
-!!              communication goals.
+!> @brief Broadcasts user inputs and decomposes the domain across MPI ranks for pre-processing
 module m_mpi_proxy
 
 #ifdef MFC_MPI
-    use mpi                    !< Message passing interface (MPI) module
+    use mpi
 #endif
 
     use m_helper
-
-    use m_derived_types         !< Definitions of the derived types
-
-    use m_global_parameters     !< Global parameters for the code
-
+    use m_derived_types
+    use m_global_parameters
     use m_mpi_common
 
     implicit none
 
 contains
-    !> Since only processor with rank 0 is in charge of reading
-            !!       and checking the consistency of the user provided inputs,
-            !!       these are not available to the remaining processors. This
-            !!       subroutine is then in charge of broadcasting the required
-            !!       information.
+    !> Since only processor with rank 0 is in charge of reading and checking the consistency of the user provided inputs, these are
+    !! not available to the remaining processors. This subroutine is then in charge of broadcasting the required information.
     impure subroutine s_mpi_bcast_user_inputs
 
 #ifdef MFC_MPI
-
-        ! Generic loop iterator
         integer :: i, j
-        ! Generic flag used to identify and report MPI errors
         integer :: ierr
 
-        ! Logistics
         call MPI_BCAST(case_dir, len(case_dir), MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
 
         #:for VAR in ['t_step_old', 't_step_start', 'm', 'n', 'p', 'm_glb', 'n_glb', 'p_glb',  &
@@ -51,18 +37,20 @@ contains
             call MPI_BCAST(${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
-        #:for VAR in [ 'old_grid','old_ic','stretch_x','stretch_y','stretch_z',&
-            & 'cyl_coord','mpp_lim','hypoelasticity', 'relax', 'parallel_io',  &
-            & 'perturb_flow', 'perturb_sph', 'mixlayer_vel_profile',           &
-            & 'mixlayer_perturb', 'bubbles_euler', 'polytropic', 'polydisperse',&
-            & 'qbmm', 'file_per_process', 'adv_n', 'ib' , 'cfl_adap_dt',       &
-            & 'cfl_const_dt', 'cfl_dt', 'surface_tension',                     &
-            & 'hyperelasticity', 'pre_stress', 'elliptic_smoothing', 'viscous',&
-            & 'bubbles_lagrange', 'bc_io', 'mhd', 'relativity', 'cont_damage', &
-            & 'igr', 'down_sample', 'simplex_perturb','fft_wrt' ]
+        #:for VAR in [ 'old_grid','old_ic','stretch_x','stretch_y','stretch_z',   &
+            & 'cyl_coord','mpp_lim','hypoelasticity', 'relax', 'parallel_io',     &
+            & 'perturb_flow', 'perturb_sph', 'mixlayer_vel_profile',              &
+            & 'mixlayer_perturb', 'bubbles_euler', 'polytropic', 'polydisperse',  &
+            & 'qbmm', 'file_per_process', 'adv_n', 'ib' , 'cfl_adap_dt',          &
+            & 'cfl_const_dt', 'cfl_dt', 'surface_tension',                        &
+            & 'bc_x%isothermal_in', 'bc_y%isothermal_in', 'bc_z%isothermal_in',   &
+            & 'bc_x%isothermal_out', 'bc_y%isothermal_out', 'bc_z%isothermal_out',&
+            & 'hyperelasticity', 'pre_stress', 'elliptic_smoothing', 'viscous',   &
+            & 'bubbles_lagrange', 'bc_io', 'mhd', 'relativity', 'cont_damage',    &
+            & 'igr', 'down_sample', 'simplex_perturb','fft_wrt', 'hyper_cleaning' ]
             call MPI_BCAST(${VAR}$, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
         #:endfor
-        call MPI_BCAST(fluid_rho(1), num_fluids_max, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        call MPI_BCAST(fluid_rho(1), num_fluids_max, mpi_p, 0, MPI_COMM_WORLD, ierr)
 
         #:for VAR in [ 'x_domain%beg', 'x_domain%end', 'y_domain%beg',         &
             & 'y_domain%end', 'z_domain%beg', 'z_domain%end', 'a_x', 'a_y',    &
@@ -71,17 +59,15 @@ contains
             & 'perturb_flow_mag', 'pref', 'rhoref', 'poly_sigma', 'R0ref',     &
             & 'Web', 'Ca', 'Re_inv', 'sigR', 'sigV', 'rhoRV', 'palpha_eps',    &
             & 'ptgalpha_eps', 'sigma', 'pi_fac', 'mixlayer_vel_coef', 'Bx0',   &
-            & 'mixlayer_perturb_k0']
+            & 'mixlayer_perturb_k0', 'bc_x%Twall_in', 'bc_x%Twall_out',        &
+            & 'bc_y%Twall_in', 'bc_y%Twall_out', 'bc_z%Twall_in',              &
+            & 'bc_z%Twall_out']
             call MPI_BCAST(${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
         #:endfor
 
         do i = 1, num_bc_patches_max
             #:for VAR in ['geometry', 'type', 'dir', 'loc']
                 call MPI_BCAST(patch_bc(i)%${VAR}$, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-            #:endfor
-
-            #:for VAR in ['vel', 'angular_vel', 'angles']
-                call MPI_BCAST(patch_ib(i)%${VAR}$, 3, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
 
             call MPI_BCAST(patch_bc(i)%radius, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
@@ -115,29 +101,51 @@ contains
             call MPI_BCAST(patch_icpp(i)%model_filepath, len(patch_icpp(i)%model_filepath), MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
 
             #:for VAR in [ 'model_translate', 'model_scale', 'model_rotate', &
-                'normal', 'radii', 'vel', 'tau_e', 'alpha_rho', 'alpha' ]
+                'normal', 'radii', 'vel', 'tau_e', 'alpha_rho', 'alpha', &
+                'fourier_cos', 'fourier_sin' ]
                 call MPI_BCAST(patch_icpp(i)%${VAR}$, size(patch_icpp(i)%${VAR}$), mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
+
+            call MPI_BCAST(patch_icpp(i)%sph_har_coeff, size(patch_icpp(i)%sph_har_coeff), mpi_p, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(patch_icpp(i)%modal_clip_r_to_min, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(patch_icpp(i)%modal_r_min, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(patch_icpp(i)%modal_use_exp_form, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
 
             call MPI_BCAST(patch_icpp(i)%model_spc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 
             if (chemistry) then
                 call MPI_BCAST(patch_icpp(i)%Y, size(patch_icpp(i)%Y), mpi_p, 0, MPI_COMM_WORLD, ierr)
             end if
-            ! Broadcast IB variables
-            call MPI_BCAST(patch_ib(i)%geometry, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-            call MPI_BCAST(patch_ib(i)%model_filepath, len(patch_ib(i)%model_filepath), MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-            call MPI_BCAST(patch_ib(i)%model_threshold, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
-            call MPI_BCAST(patch_ib(i)%model_spc, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+        end do
 
-            #:for VAR in [ 'x_centroid', 'y_centroid', 'z_centroid',           &
-                & 'length_x', 'length_y', 'length_z', 'radius', 'c', 'p', 't', 'm', 'theta']
+        do i = 1, num_ibs
+            #:for VAR in ['vel', 'angular_vel', 'angles']
+                call MPI_BCAST(patch_ib(i)%${VAR}$, size(patch_ib(i)%${VAR}$), mpi_p, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+            call MPI_BCAST(patch_ib(i)%geometry, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
+            #:for VAR in [ 'x_centroid', 'y_centroid', 'z_centroid', &
+                & 'length_x', 'length_y', 'length_z', 'radius']
                 call MPI_BCAST(patch_ib(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
+            call MPI_BCAST(patch_ib(i)%airfoil_id, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(patch_ib(i)%model_id, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
             call MPI_BCAST(patch_ib(i)%slip, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+        end do
 
-            #:for VAR in [ 'model_translate', 'model_scale', 'model_rotate']
-                call MPI_BCAST(patch_ib(i)%${VAR}$, size(patch_ib(i)%${VAR}$), mpi_p, 0, MPI_COMM_WORLD, ierr)
+        do i = 1, num_ib_airfoils_max
+            #:for VAR in ['c', 'p', 't', 'm']
+                call MPI_BCAST(ib_airfoil(i)%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
+            #:endfor
+        end do
+
+        call MPI_BCAST(num_stl_models, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+
+        do i = 1, num_stl_models_max
+            call MPI_BCAST(stl_models(i)%model_filepath, len(stl_models(i)%model_filepath), MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+            call MPI_BCAST(stl_models(i)%model_threshold, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
+            #:for VAR in ['model_translate', 'model_scale']
+                call MPI_BCAST(stl_models(i)%${VAR}$, 3, mpi_p, 0, MPI_COMM_WORLD, ierr)
             #:endfor
         end do
 
@@ -174,7 +182,6 @@ contains
                 call MPI_BCAST(simplex_params%perturb_vel_offset(i, j), 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
             end do
         end do
-
 #endif
 
     end subroutine s_mpi_bcast_user_inputs

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import math
 import json
+import math
 
 Ma = 1.4
 ps = 238558
@@ -59,7 +59,7 @@ print(
             "recon_type": 2,
             "muscl_order": 2,
             "muscl_lim": 4,
-            "int_comp": "T",
+            "int_comp": 1,
             "null_weights": "F",
             "riemann_solver": 2,
             "wave_speeds": 1,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import math
 import json
+import math
 
 # FLUID PROPERTIES
 R_uni = 8314.0  # [J/kmol/K]
@@ -114,7 +114,7 @@ print(
             "prim_vars_wrt": "T",
             "parallel_io": "F",
             "fd_order": 1,
-            #'schlieren_wrt'                :'T',
+            # 'schlieren_wrt'                :'T',
             "probe_wrt": "T",
             "num_probes": 1,
             "probe(1)%x": 0.0,

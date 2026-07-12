@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import math
 import json
+import math
 
 # Domain parameters
 D = 2.5  # Jet diameter
@@ -52,6 +52,7 @@ print(
             "num_fluids": 1,
             "mpp_lim": "F",
             "time_stepper": 3,
+            "riemann_solver": 5,
             "igr": "T",
             "igr_order": 3,
             "igr_pres_lim": "T",

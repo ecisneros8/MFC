@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import math
 import json
+import math
 
 eps = 1e-8
 Nx = 699
@@ -30,6 +30,7 @@ print(
             "alt_soundspeed": "F",
             "num_fluids": 2,
             "time_stepper": 3,
+            "riemann_solver": 5,
             "elliptic_smoothing": "T",
             "elliptic_smoothing_iters": 50,
             "igr": "T",
