@@ -253,7 +253,7 @@ contains
                     do f = 1, spbf_num_freq
                         pre_fac = (freq(f)/spbf_conv_vel)
                         theta_x = pre_fac*(x_cc(j) - spbf_xc - spbf_conv_vel*t) + phase(f)
-                        theta_y = pre_fac*(y_cc(k) - spbf_yc - spbf_conv_vel*t) + phase(f)
+                        theta_y = pre_fac*(y_cc(k) - spbf_yc) + phase(f)
                         spbf_source_x(j, k, l) = spbf_source_x(j, k, &
                                       & l) + spbf_amp*support*(pre_fac*sin(theta_x)*cos(theta_y) - 2*spbf_sigma*(y_cc(k) &
                                       & - spbf_yc)*sin(theta_x)*sin(theta_y))
@@ -335,7 +335,6 @@ contains
         end if
 
         if (bf_x) then  ! x-direction body forces
-
             $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3, copyin='[bounds]')
             do l = bounds(3)%beg, bounds(3)%end
                 do k = bounds(2)%beg, bounds(2)%end
@@ -350,7 +349,6 @@ contains
         end if
 
         if (bf_y) then  ! y-direction body forces
-
             $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3, copyin='[bounds]')
             do l = bounds(3)%beg, bounds(3)%end
                 do k = bounds(2)%beg, bounds(2)%end
@@ -366,7 +364,6 @@ contains
         end if
 
         if (bf_z) then  ! z-direction body forces
-
             $:GPU_PARALLEL_LOOP(private='[j, k, l]', collapse=3, copyin='[bounds]')
             do l = bounds(3)%beg, bounds(3)%end
                 do k = bounds(2)%beg, bounds(2)%end

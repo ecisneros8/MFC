@@ -192,8 +192,7 @@ contains
             #:endfor
         end do
 
-        ! manual: spatial-support body-force derived-type members
-        ! (scalars are broadcast by generated_bcast.fpp)
+        ! manual: spatial-support body-force derived-type members (scalars are broadcast by generated_bcast.fpp)
         #:for VAR in ['amp','x_centroid','y_centroid','sigma','conv_vel']
             call MPI_BCAST(spatial_bf%${VAR}$, 1, mpi_p, 0, MPI_COMM_WORLD, ierr)
         #:endfor

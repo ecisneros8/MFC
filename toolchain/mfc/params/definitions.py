@@ -1182,6 +1182,7 @@ TYPED_DECLS: dict[str, tuple] = {
     "lag_params": ("type(bubbles_lagrange_parameters)", None, True, "Lagrange bubbles' parameters"),
     "particle_cloud": ("type(particle_cloud_parameters)", "num_particle_clouds_max", False, "Particle bed specifications"),
     "simplex_params": ("type(simplex_noise_params)", None, False, None),
+    "spatial_bf": ("type(spbf_parameters)", None, True, "Parameters for spatially supported body force (Wei & Freund, JFM 2005)"),
 }
 
 

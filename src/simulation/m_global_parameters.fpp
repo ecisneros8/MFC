@@ -73,12 +73,11 @@ module m_global_parameters
     $:GPU_DECLARE(create='[accel_bf]')
     ! $:GPU_DECLARE(create='[k_x,w_x,p_x,g_x,k_y,w_y,p_y,g_y,k_z,w_z,p_z,g_z]')
 
-    !> amplitude, frequency, central coordinate, convective velocity for body force with spatial support
-    !> (bf_spatial_support scalar is auto-generated from definitions.py)
-    type(spbf_parameters)                   :: spatial_bf
+    !> Source fields for the spatially supported body force. `spatial_bf` and
+    !> `bf_spatial_support` are auto-generated in generated_decls.fpp.
     real(wp), allocatable, dimension(:,:,:) :: spbf_source_x
     real(wp), allocatable, dimension(:,:,:) :: spbf_source_y
-    $:GPU_DECLARE(create='[spatial_bf, spbf_source_x, spbf_source_y]')
+    $:GPU_DECLARE(create='[spbf_source_x, spbf_source_y]')
 
     ! Synthetic turbulence (scalars auto-generated in generated_decls.fpp; their
     ! GPU_DECLARE lines live in m_global_parameters_common)
