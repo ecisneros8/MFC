@@ -177,11 +177,34 @@ PHYSICS_DOCS = {
         "category": "Feature Compatibility",
         "explanation": ("Requires model_eqns = 2. Incompatible with characteristic BCs, bubbles, MHD, and elastic models."),
     },
+    "check_non_newtonian": {
+        "title": "Non-Newtonian (Herschel-Bulkley) Viscosity",
+        "category": "Feature Compatibility",
+        "math": r"\tau = (\tau_0 + K \dot{\gamma}^n) \hat{e}, \quad \mu_{\rm eff} \in [\mu_{\min}, \mu_{\max}]",
+        "explanation": (
+            "Per-fluid Herschel-Bulkley shear-dependent viscosity. "
+            "Requires viscous=T, model_eqns 2 or 3, riemann_solver 1 (HLL) or 2 (HLLC), "
+            "and K, nn, mu_max to be set. "
+            "When tau0 > 0, hb_m (Papanastasiou regularization) must also be set. "
+            "K, nn, mu_max must be positive; mu_min and hb_m must be positive when set; tau0 must be non-negative. "
+            "Re(2) and mu_bulk (bulk viscosity) are rejected for non-Newtonian fluids, "
+            "and HB parameters are rejected on fluids without non_newtonian=T. "
+            "Incompatible with igr."
+        ),
+        "references": ["Papanastasiou87"],
+        "docs_section": "sec-non-newtonian",
+    },
     # Acoustic Sources
     "check_acoustic_source": {
         "title": "Acoustic Sources",
         "category": "Acoustic Sources",
         "explanation": ("Dimension-specific support types. Pulse type in {1,2,3,4}. Non-planar sources require foc_length and aperture."),
+    },
+    # IC Extrusion
+    "check_ic_extrusion": {
+        "title": "IC Extrusion File Parameters",
+        "category": "IC Extrusion",
+        "explanation": "Extrusion hcids (170, 270, 271, 272, 370) read initial condition data from files. Both files_dir and file_extension must be set.",
     },
     # Post-Processing
     "check_vorticity": {
@@ -277,7 +300,14 @@ class CaseValidator:
             if param in self.params:  # Only validate params that are set
                 self._validate_logical(param)
 
-        self.prohibit(self.get("recon_type", 1) not in [1, 2], "recon_type must be 1 (WENO) or 2 (MUSCL)")
+        _recon_constraint = CONSTRAINTS["recon_type"]
+        _recon_choices = _recon_constraint["choices"]
+        _recon_by_value = {v: n for n, v in _recon_constraint.get("names", {}).items()}
+        _recon_shown = ", ".join(f"{c} ({_recon_by_value[c]})" if c in _recon_by_value else str(c) for c in _recon_choices)
+        self.prohibit(
+            self.get("recon_type", 1) not in _recon_choices,
+            f"recon_type must be one of {_recon_shown}",
+        )
 
         # Required domain parameters when m > 0
         m = self.get("m")
@@ -581,6 +611,8 @@ class CaseValidator:
 
         ib_state_wrt = self.get("ib_state_wrt", "F") == "T"
 
+        fd_order = self.get("fd_order")
+        self.prohibit(ib and fd_order is None, "fd_order must be specified for ib")
         self.prohibit(ib and n <= 0, "Immersed Boundaries do not work in 1D (requires n > 0)")
         has_particle_clouds = num_particle_clouds > 0 and any((self.get(f"particle_cloud({i})%num_particles", 0) or 0) > 0 for i in range(1, num_particle_clouds + 1))
         self.prohibit(
@@ -599,22 +631,22 @@ class CaseValidator:
             packing_method = self.get(f"particle_cloud({i})%packing_method", None)
             self.prohibit(
                 packing_method is None,
-                f"particle_cloud({i})%packing_method must be specified (1 = rejection sampling)",
+                f"particle_cloud({i})%packing_method must be specified (1 = rejection sampling, 2 = lattice)",
             )
             self.prohibit(
-                packing_method is not None and packing_method not in [1],
-                f"particle_cloud({i})%packing_method must be 1 (rejection sampling is the only supported method)",
+                packing_method is not None and packing_method not in [1, 2],
+                f"particle_cloud({i})%packing_method must be 1 (rejection sampling) or 2 (lattice)",
             )
 
         num_ib_airfoils_max = get_fortran_constants().get("num_ib_airfoils_max", 5)
         num_stl_models_max = get_fortran_constants().get("num_stl_models_max", 10)
         num_stl_models = self.get("num_stl_models", 0)
         self.prohibit(
-            ib and num_stl_models < 0,
+            num_stl_models < 0,
             "num_stl_models must be >= 0",
         )
         self.prohibit(
-            ib and num_stl_models > num_stl_models_max,
+            num_stl_models > num_stl_models_max,
             f"num_stl_models must be <= {num_stl_models_max} (num_stl_models_max in m_constants.fpp)",
         )
         for i in range(1, num_ibs + 1):
@@ -651,6 +683,22 @@ class CaseValidator:
                     True,
                     f"patch_ib({i})%model_id is set but geometry ({geometry}) is not an STL model (5 or 12)",
                 )
+        num_patches = self.get("num_patches", 0) or 0
+        for i in range(1, num_patches + 1):
+            geometry = self.get(f"patch_icpp({i})%geometry", None)
+            model_id = self.get(f"patch_icpp({i})%model_id", None)
+            if geometry == 21:
+                self.prohibit(
+                    model_id is None or model_id <= 0,
+                    f"patch_icpp({i})%model_id must be set to a positive integer for STL geometry (21)",
+                )
+                if model_id is not None:
+                    self.prohibit(
+                        model_id > num_stl_models,
+                        f"patch_icpp({i})%model_id={model_id} exceeds num_stl_models={num_stl_models}",
+                    )
+            elif model_id is not None and model_id > 0:
+                self.prohibit(True, f"patch_icpp({i})%model_id is set but geometry ({geometry}) is not an STL model (21)")
 
     def check_stiffened_eos(self):
         """Checks constraints on stiffened equation of state fluids parameters"""
@@ -926,6 +974,67 @@ class CaseValidator:
         # weno_Re_flux requires viscous
         weno_Re_flux = self.get("weno_Re_flux", "F") == "T"
         self.prohibit(weno_Re_flux and not viscous, "weno_Re_flux requires viscous to be enabled")
+
+    def check_non_newtonian(self):
+        """Checks constraints on non-Newtonian (Herschel-Bulkley) parameters (simulation)"""
+        num_fluids = self.get("num_fluids")
+        # If num_fluids is not set, check at least fluid 1 (for model_eqns=1)
+        if num_fluids is None:
+            num_fluids = 1
+
+        viscous = self.get("viscous", "F") == "T"
+        igr = self.get("igr", "F") == "T"
+        model_eqns = self.get("model_eqns")
+        riemann_solver = self.get("riemann_solver")
+
+        for i in range(1, num_fluids + 1):
+            if self.get(f"fluid_pp({i})%non_newtonian", "F") != "T":
+                for hb_param in ["K", "nn", "tau0", "hb_m", "mu_min", "mu_max", "mu_bulk"]:
+                    self.prohibit(
+                        self.get(f"fluid_pp({i})%{hb_param}") is not None,
+                        f"fluid_pp({i})%{hb_param} is set, but fluid_pp({i})%non_newtonian is not enabled",
+                    )
+                continue
+
+            self.prohibit(not viscous, f"fluid_pp({i})%non_newtonian requires viscous = T")
+            self.prohibit(self.get(f"fluid_pp({i})%K") is None, f"fluid_pp({i})%non_newtonian requires fluid_pp({i})%K to be set")
+            self.prohibit(self.get(f"fluid_pp({i})%nn") is None, f"fluid_pp({i})%non_newtonian requires fluid_pp({i})%nn to be set")
+            self.prohibit(self.get(f"fluid_pp({i})%mu_max") is None, f"fluid_pp({i})%non_newtonian requires fluid_pp({i})%mu_max to be set")
+
+            K = self.get(f"fluid_pp({i})%K")
+            nn = self.get(f"fluid_pp({i})%nn")
+            mu_min = self.get(f"fluid_pp({i})%mu_min")
+            mu_max = self.get(f"fluid_pp({i})%mu_max")
+            hb_m = self.get(f"fluid_pp({i})%hb_m")
+            tau0 = self.get(f"fluid_pp({i})%tau0", 0.0)
+
+            self.prohibit(K is not None and K <= 0, f"fluid_pp({i})%K must be positive")
+            self.prohibit(nn is not None and nn <= 0, f"fluid_pp({i})%nn must be positive")
+            self.prohibit(mu_max is not None and mu_max <= 0, f"fluid_pp({i})%mu_max must be positive")
+            self.prohibit(mu_min is not None and mu_min <= 0, f"fluid_pp({i})%mu_min must be positive")
+            self.prohibit(hb_m is not None and hb_m <= 0, f"fluid_pp({i})%hb_m must be positive")
+            self.prohibit(tau0 is not None and tau0 < 0, f"fluid_pp({i})%tau0 must be non-negative")
+
+            if tau0 is not None and tau0 > 0:
+                self.prohibit(hb_m is None, f"fluid_pp({i})%non_newtonian: tau0 > 0 requires fluid_pp({i})%hb_m to be set")
+
+            if mu_min is not None and mu_max is not None:
+                self.prohibit(mu_max <= mu_min, f"fluid_pp({i})%non_newtonian: mu_max must exceed mu_min")
+
+            self.prohibit(igr, f"fluid_pp({i})%non_newtonian is incompatible with igr")
+            self.prohibit(model_eqns is not None and model_eqns not in (2, 3), f"fluid_pp({i})%non_newtonian requires model_eqns 2 or 3")
+            self.prohibit(
+                riemann_solver is not None and riemann_solver not in (1, 2),
+                f"fluid_pp({i})%non_newtonian requires riemann_solver 1 (HLL) or 2 (HLLC)",
+            )
+            self.prohibit(
+                self.get(f"fluid_pp({i})%mu_bulk") is not None,
+                f"fluid_pp({i})%mu_bulk (non-Newtonian bulk viscosity) is not yet supported",
+            )
+            self.prohibit(
+                self.get(f"fluid_pp({i})%Re(2)") is not None,
+                f"fluid_pp({i})%Re(2) (bulk viscosity) is not supported for non-Newtonian fluids",
+            )
 
     def check_mhd_simulation(self):
         """Checks MHD constraints specific to simulation"""
@@ -2116,6 +2225,26 @@ class CaseValidator:
 
     # Main Validation Entry Points
 
+    def check_ic_extrusion(self):
+        """Checks that files_dir and file_extension are set for extrusion hcids."""
+        extrusion_hcids = {170, 270, 271, 272, 370}
+        num_patches = self.get("num_patches", 0)
+        if not self._is_numeric(num_patches) or num_patches <= 0:
+            return
+
+        for i in range(1, num_patches + 1):
+            hcid = self.get(f"patch_icpp({i})%hcid")
+            if hcid not in extrusion_hcids:
+                continue
+            self.prohibit(
+                not self.is_set("files_dir"),
+                f"patch_icpp({i})%hcid={hcid} requires files_dir to be set",
+            )
+            self.prohibit(
+                not self.is_set("file_extension"),
+                f"patch_icpp({i})%hcid={hcid} requires file_extension to be set",
+            )
+
     def validate_common(self):
         """Validate parameters common to all stages"""
         self.check_parameter_types()  # Type validation first
@@ -2154,6 +2283,7 @@ class CaseValidator:
         self.check_bubbles_euler_simulation()
         self.check_body_forces()
         self.check_viscosity()
+        self.check_non_newtonian()
         self.check_mhd_simulation()
         self.check_igr_simulation()
         self.check_acoustic_source()
@@ -2163,7 +2293,6 @@ class CaseValidator:
         self.check_continuum_damage()
         self.check_grcbc()
         self.check_probe_integral_output()
-        self.check_chemistry()
 
     def validate_pre_process(self):
         """Validate pre-process-specific parameters"""
@@ -2173,7 +2302,6 @@ class CaseValidator:
         self.check_parallel_io_pre_process()
         self.check_grid_stretching()
         self.check_perturb_density()
-        self.check_chemistry()
         self.check_misc_pre_process()
         self.check_patch_physics()
         self.check_volume_fraction_sum()
@@ -2181,6 +2309,7 @@ class CaseValidator:
         self.check_patch_within_domain()
         self.check_velocity_components()
         self.check_bc_patches()
+        self.check_ic_extrusion()
 
     def validate_post_process(self):
         """Validate post-process-specific parameters"""
@@ -2201,7 +2330,6 @@ class CaseValidator:
         self.check_schlieren()
         self.check_surface_tension_post()
         self.check_no_flow_variables()
-        self.check_chemistry()
 
     def validate(self, stage: str = "simulation"):
         """Main validation method

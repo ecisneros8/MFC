@@ -546,13 +546,23 @@ VALIDATE_COMMAND = Command(
     positionals=[
         Positional(
             name="input",
-            help="Path to case file to validate.",
+            help="Path(s) to case file(s) to validate. Multiple files validate in one process (used by precheck).",
+            nargs="+",
             completion=Completion(type=CompletionType.FILES_PY),
+        ),
+    ],
+    arguments=[
+        Argument(
+            name="migrate",
+            help='Rewrite integer codes of enumerated parameters to named values (e.g. riemann_solver: 2 -> "hllc") in place.',
+            action=ArgAction.STORE_TRUE,
+            default=False,
         ),
     ],
     examples=[
         Example("./mfc.sh validate case.py", "Check syntax and constraints"),
         Example("./mfc.sh validate case.py -d", "Validate with toolchain debug output"),
+        Example("./mfc.sh validate case.py --migrate", "Rewrite integer codes to named values"),
     ],
     key_options=[
         ("-d, --debug-log", "Enable toolchain debug logging"),
