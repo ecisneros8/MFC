@@ -271,6 +271,11 @@ The code provides three pre-built patches for dimensional extrusion of initial c
 - `case(170)`: Load 1D profile from data files
 - `case(270)`: Extrude 1D data to 2D domain
 - `case(370)`: Extrude 2D data to 3D domain
+- `case(273)`: Extrude 1D data to 2D domain, with the mom%%beg data column carrying the
+  extruded-axis (mom%%end) velocity profile instead of its own (zeroed) component. Used by
+  `examples/2D_reacting_mixing_layer` to give a temporally-evolving mixing layer a nonzero
+  mean streamwise velocity along the extruded axis, which `case(270)` cannot represent since
+  it always zeros that component.
 
 Setup: Only requires specifying `files_dir` and filename pattern via `file_extension`. The files are located, for example, at `examples/1D_flamelet/IC`, and their format is `prim.XX.YY.file_extension.dat`.
 Implementation: All variables and file handling are managed in the `case.py` file of the simulation.

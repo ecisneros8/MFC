@@ -286,6 +286,15 @@
     case (270)  ! 2D extrusion of 1D profile from external data
         ! This hardcoded case extrudes a 1D profile to initialize a 2D simulation domain
         @: HardcodedReadValues()
+    case (273)  ! Temporal reacting mixing layer: 2D extrusion + streamwise velocity
+        ! @:HardcodedReadValues() always zeros mom%end (the extruded-axis velocity).
+        ! The mom%beg file slot is repurposed to carry the streamwise-velocity-vs-
+        ! cross-stream-position profile (real cross-stream velocity is legitimately
+        ! zero everywhere in the unperturbed base state), so swap it into mom%end and
+        ! zero out mom%beg's true physical value.
+        @: HardcodedReadValues()
+        q_prim_vf(eqn_idx%mom%end)%sf(i, j, 0) = q_prim_vf(eqn_idx%mom%beg)%sf(i, j, 0)
+        q_prim_vf(eqn_idx%mom%beg)%sf(i, j, 0) = 0.0_wp
     case (271)  ! Premixed Flame Vortices Interaction
         @: HardcodedReadValues()
         x1c = 0.0027_wp
