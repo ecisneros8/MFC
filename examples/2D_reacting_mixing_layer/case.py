@@ -28,12 +28,12 @@ args = parser.parse_args()
 
 # Physical parameters: representative temporal H2/air mixing layer.
 pressure = 101_325.0
-temperature_ox = 300.0
+temperature_ox = 500.0
 temperature_fu = 300.0
 fuel = "H2"
 mole_fraction_ox = 0.21
 mole_fraction_fu = 1.0
-vort_thickness = 1.0e-4
+vort_thickness = 1.0e-3
 mach_c = 0.3
 num_iter = 5
 

@@ -364,7 +364,7 @@ def create_simulation_fields(pyro_gas, sol, pres, temp_ox, temp_fu, cross_coord,
         solver_options,
         solver,
     )
-    return cross_coord, sim_fields
+    return sim_fields
 
 
 def write_hcid_ic(output_dir, cross_coord, density, streamwise_velocity, pressure, mass_fractions, file_extension="000000"):

@@ -1,78 +1,10 @@
-This file was created on 2026-07-16 04:02:01.104651.
+This file was created on 2026-07-17 01:25:13.988812.
 
 mfc.sh:
 
     Invocation: test --generate --only C4EB58A8 -j 4
     Lock:       mpi=Yes & gpu=No & debug=No & reldebug=No & gcov=No & unified=No & single=No & mixed=No & fastmath=No
-    Git:        c782661e7db38122b9f2c8b5e83631eef7b0436b on master (dirty)
-
-syscheck:
-
-    CMake Configuration:
-    
-        CMake v3.28.3 on vm
-    
-        C       : GNU v13.3.0 (/usr/bin/cc)
-        Fortran : GNU v13.3.0 (/usr/bin/gfortran)
-    
-        PRE_PROCESS   : OFF
-        SIMULATION    : OFF
-        POST_PROCESS  : OFF
-        SYSCHECK      : ON
-        DOCUMENTATION : OFF
-        ALL           : OFF
-    
-        MPI     : ON
-        OpenACC : OFF
-        OpenMP  : OFF
-    
-        Fypp    : /home/user/repo/build/venv/bin/fypp
-        Doxygen : 
-    
-        Build Type : Release
-    
-    Configuration Environment:
-    
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /usr/bin/gfortran
-        OMPI_CC  : 
-        OMPI_CXX : 
-        OMPI_FC  : 
-
-pre_process:
-
-    CMake Configuration:
-    
-        CMake v3.28.3 on vm
-    
-        C       : GNU v13.3.0 (/usr/bin/cc)
-        Fortran : GNU v13.3.0 (/usr/bin/gfortran)
-    
-        PRE_PROCESS   : ON
-        SIMULATION    : OFF
-        POST_PROCESS  : OFF
-        SYSCHECK      : OFF
-        DOCUMENTATION : OFF
-        ALL           : OFF
-    
-        MPI     : ON
-        OpenACC : OFF
-        OpenMP  : OFF
-    
-        Fypp    : /home/user/repo/build/venv/bin/fypp
-        Doxygen : 
-    
-        Build Type : Release
-    
-    Configuration Environment:
-    
-        CC       : /usr/bin/cc
-        CXX      : /usr/bin/c++
-        FC       : /usr/bin/gfortran
-        OMPI_CC  : 
-        OMPI_CXX : 
-        OMPI_FC  : 
+    Git:        156287c986155e0d3d138948d6b411ac89cff96c on master (dirty)
 
 post_process:
 
@@ -87,6 +19,40 @@ post_process:
         SIMULATION    : OFF
         POST_PROCESS  : ON
         SYSCHECK      : OFF
+        DOCUMENTATION : OFF
+        ALL           : OFF
+    
+        MPI     : ON
+        OpenACC : OFF
+        OpenMP  : OFF
+    
+        Fypp    : /home/user/repo/build/venv/bin/fypp
+        Doxygen : 
+    
+        Build Type : Release
+    
+    Configuration Environment:
+    
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /usr/bin/gfortran
+        OMPI_CC  : 
+        OMPI_CXX : 
+        OMPI_FC  : 
+
+syscheck:
+
+    CMake Configuration:
+    
+        CMake v3.28.3 on vm
+    
+        C       : GNU v13.3.0 (/usr/bin/cc)
+        Fortran : GNU v13.3.0 (/usr/bin/gfortran)
+    
+        PRE_PROCESS   : OFF
+        SIMULATION    : OFF
+        POST_PROCESS  : OFF
+        SYSCHECK      : ON
         DOCUMENTATION : OFF
         ALL           : OFF
     
@@ -142,6 +108,40 @@ simulation:
         OMPI_CXX : 
         OMPI_FC  : 
 
+pre_process:
+
+    CMake Configuration:
+    
+        CMake v3.28.3 on vm
+    
+        C       : GNU v13.3.0 (/usr/bin/cc)
+        Fortran : GNU v13.3.0 (/usr/bin/gfortran)
+    
+        PRE_PROCESS   : ON
+        SIMULATION    : OFF
+        POST_PROCESS  : OFF
+        SYSCHECK      : OFF
+        DOCUMENTATION : OFF
+        ALL           : OFF
+    
+        MPI     : ON
+        OpenACC : OFF
+        OpenMP  : OFF
+    
+        Fypp    : /home/user/repo/build/venv/bin/fypp
+        Doxygen : 
+    
+        Build Type : Release
+    
+    Configuration Environment:
+    
+        CC       : /usr/bin/cc
+        CXX      : /usr/bin/c++
+        FC       : /usr/bin/gfortran
+        OMPI_CC  : 
+        OMPI_CXX : 
+        OMPI_FC  : 
+
 CPU:
 
     CPU Info:
@@ -160,7 +160,7 @@ CPU:
     Core(s) per socket:                      4
     Socket(s):                               1
     Stepping:                                7
-    BogoMIPS:                                5600.40
+    BogoMIPS:                                5600.37
     Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm avx512f avx512dq rdseed adx smap clflushopt clwb avx512cd avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves arat umip avx512_vnni md_clear arch_capabilities
     Hypervisor vendor:                       KVM
     Virtualization type:                     full
