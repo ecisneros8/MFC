@@ -1,22 +1,21 @@
-"""Flamelet-based initial condition generator for a temporal reacting mixing layer.
+"""Flamelet-based initial/inflow condition generator for a spatially-evolving reacting
+mixing layer.
 
-Adapted from an external Cantera + Pyrometheus(flamelets) + JAX tool that used to write
-MFC's internal binary restart format directly. Here the same 1-D flamelet solve instead
-writes plain-text `prim.<n>.00.<ext>.dat` files read by hcid=273
-(`src/common/include/2dHardcodedIC.fpp`), so `pre_process` — not this script — owns the
-binary layout.
+The 1-D flamelet solver core here is identical to (and kept in sync by hand with)
+examples/2D_reacting_mixing_layer/flamelet_ic.py -- duplicated rather than imported
+across example directories, since each MFC example is a self-contained, copyable unit
+(no example currently imports from a sibling directory). Only the writer and grid
+functions differ, because this case needs a genuinely full 2D field, not an extrusion.
 
-AXIS CONVENTION (do not "fix" this to look more natural -- it is required by hcid=273):
-    MFC x  ->  cross-stream / flame coordinate (the flamelet profile varies here)
-    MFC y  ->  streamwise (periodic, statistically homogeneous; extruded by hcid=273)
-This is the reverse of the more intuitive x=streamwise labeling, because
-`ExtrusionHardcodedIC.fpp` mechanically requires the profile to vary with MFC's x and be
-replicated across MFC's y. See docs/documentation/case.md's hcid=273 entry.
-
-The streamwise mean velocity (which must vary along MFC's x, i.e. the profile axis) is
-written into the mom%beg (index 2) file slot -- the slot that would otherwise hold the
-(always-zero, in this unperturbed base state) cross-stream velocity. `case(273)` in
-2dHardcodedIC.fpp swaps it into its correct place (mom%end) at load time.
+AXIS CONVENTION (the reverse of the temporal example's x/y roles, and deliberately so):
+    MFC x  ->  streamwise (matches spatial_bf's hardcoded advecting-direction convention
+               in src/simulation/m_body_forces.fpp: theta_x includes a conv_vel*t term,
+               theta_y does not)
+    MFC y  ->  cross-stream (the flamelet profile varies here)
+Uses hcid=274 (src/common/include/2dHardcodedIC.fpp): a full (x,y) field read with no
+extrusion assumption, unlike hcid=273 (which mechanically requires cross-stream=x and
+would conflict with spatial_bf's fixed axis convention -- see case.py's module
+docstring).
 """
 
 import contextlib
@@ -36,13 +35,13 @@ from scipy.interpolate import interp1d
 
 @dataclass
 class SimulationFields:
-    """1-D flamelet profiles on the flame/cross-stream (MFC x) coordinate."""
+    """1-D flamelet profiles on the flame/cross-stream (MFC y) coordinate."""
 
     mixture_fraction: jnp.ndarray
     temperature: jnp.ndarray
     pressure: jnp.ndarray
-    velocity: jnp.ndarray  # streamwise (MFC y) velocity
-    mass_fractions: jnp.ndarray  # shape (Ns, nx)
+    velocity: jnp.ndarray  # streamwise (MFC x) velocity
+    mass_fractions: jnp.ndarray  # shape (Ns, ny)
 
 
 def diffusivity(pyro_gas, pressure, temperature, mass_fractions):
@@ -79,9 +78,13 @@ def configure_flamelet_solver():
     }
 
 
-def streams(sol, fuel, pres, temp_ox, temp_fu, molefrac_ox, molefrac_fu, vort_thickness, mach_c):
-    """Thermodynamic state and velocities for the oxidizer and fuel streams
-    (temporal evolution: symmetric convective frame, u_ox = -u_fu)."""
+def streams(sol, fuel, pres, temp_ox, temp_fu, molefrac_ox, molefrac_fu, vort_thickness, mach_ox, mach_fu):
+    """Thermodynamic state and velocities for the oxidizer and fuel streams, spatial
+    (lab-frame) evolution: u_ox = mach_ox*c_ox, u_fu = mach_fu*c_fu -- both streams
+    co-flow at their own absolute speed, giving a nonzero mean/convective velocity
+    (unlike the temporal case's symmetric convective frame, where u_ox = -u_fu by
+    construction and the mean is always zero -- unusable for spatial_bf%conv_vel,
+    which needs to be nonzero to drive the forcing)."""
     molefrac_di = 1 - molefrac_ox
     sol.TPX = temp_ox, pres, f"O2:{molefrac_ox}, N2:{molefrac_di}"
     y_ox = sol.Y
@@ -101,9 +104,9 @@ def streams(sol, fuel, pres, temp_ox, temp_fu, molefrac_ox, molefrac_fu, vort_th
     z_st = stoichiometric_mixture_fraction(sol, y_ox, y_fu)
     print(f"Stoichiometric mixture fraction: Z_st = {z_st:.3f}")
 
-    u_ox = 0.5 * mach_c * (c_ox + c_fu)
-    u_fu = -0.5 * mach_c * (c_ox + c_fu)
-    delta_u = 2 * u_ox
+    u_ox = mach_ox * c_ox
+    u_fu = mach_fu * c_fu
+    delta_u = u_ox - u_fu
 
     print(f"Convective Mach: Ma = {delta_u / (c_ox + c_fu)}")
     print(f"Reynolds number: Re = {0.5 * delta_u * vort_thickness / nu_ox}")
@@ -268,38 +271,6 @@ def find_flame_dissipation_rate(pyro_gas, z_st, mixture_fraction, cross_coord, n
     return sim_fields
 
 
-def compute_grid(vort_thickness, cross_min, cross_max, points_per_cross, stream_min, stream_max, num_y):
-    """Pure grid arithmetic -- no Cantera/JAX. Always cheap to call, including on an
-    IC/ cache hit, so case.py never needs to run the flamelet solve just to learn its
-    own domain size.
-
-    Returns
-    -------
-    cross_coord : ndarray (nx,), cross-stream cell centres (MFC x)
-    grid : dict, m/x_domain/n/y_domain for case.py's case dict
-    """
-    cross_lo = cross_min * vort_thickness
-    cross_hi = cross_max * vort_thickness
-    dx = vort_thickness / points_per_cross
-    # weno_order=5 needs m+1 >= num_stcls_min*weno_order (25); floor with margin so a
-    # small --scale for cheap test runs can't shrink the grid below that.
-    num_x = max(int(round((cross_hi - cross_lo) / dx)), 32)
-
-    # Cell centers, matching MFC's own x_cc(i) = x_domain%beg + (i+0.5)*dx convention
-    # exactly, so pre_process's grid lines up with this array cell-for-cell.
-    cross_coord = cross_lo + (np.arange(num_x) + 0.5) * dx
-
-    grid = {
-        "m": num_x - 1,
-        "x_domain_beg": float(cross_lo),
-        "x_domain_end": float(cross_lo + num_x * dx),
-        "n": num_y - 1,
-        "y_domain_beg": float(stream_min * vort_thickness),
-        "y_domain_end": float(stream_max * vort_thickness),
-    }
-    return cross_coord, grid
-
-
 def reference_fluid_properties(sol, temperature_ox, pressure, mole_fraction_ox):
     """Cheap (no equilibration/solve) reference gamma and viscosity for fluid_pp(1)."""
     sol.TPX = temperature_ox, pressure, f"O2:{mole_fraction_ox}, N2:{1 - mole_fraction_ox}"
@@ -313,8 +284,8 @@ def ic_cache_valid(ic_dir, file_extension, expected_lines):
     `./mfc.sh validate` during precheck uses no args/default scale, while a registered
     test passes its own --scale) that can share this directory, so a cache populated by
     one grid size must not be silently reused by a run expecting a different one --
-    reading it would desync the Fortran reader (hcid=273 expects exactly len(cross_coord)
-    lines) from the actual grid."""
+    reading it would desync the Fortran reader (hcid=274 expects exactly
+    (m_glb+1)*(n_glb+1) lines) from the actual grid."""
     path = os.path.join(ic_dir, f"prim.1.00.{file_extension}.dat")
     if not os.path.isfile(path):
         return False
@@ -323,7 +294,7 @@ def ic_cache_valid(ic_dir, file_extension, expected_lines):
 
 
 def create_simulation_fields(pyro_gas, sol, pres, temp_ox, temp_fu, cross_coord, vort_thickness, stream_ox, stream_fu, z_st, num_iter, cold):
-    """1-D flamelet profiles on the cross-stream (MFC x) coordinate `cross_coord`."""
+    """1-D flamelet profiles on the cross-stream (MFC y) coordinate `cross_coord`."""
     mollifier = 0.5 * (1 - np.tanh(2 * cross_coord / vort_thickness))
 
     h_ox, y_ox, _, _, u_ox, nu_ox = stream_ox
@@ -383,38 +354,97 @@ def create_simulation_fields(pyro_gas, sol, pres, temp_ox, temp_fu, cross_coord,
     return sim_fields
 
 
-def write_hcid_ic(output_dir, cross_coord, density, streamwise_velocity, pressure, mass_fractions, file_extension="000000"):
-    """Write hcid=273 IC text files: prim.<n>.00.<ext>.dat, one `x value` pair per line.
+def compute_grid_spatial(vort_thickness, cross_min, cross_max, points_per_cross, stream_min, stream_max, points_per_stream):
+    """Pure grid arithmetic -- no Cantera/JAX. Always cheap to call, including on an
+    IC/ cache hit, so case.py never needs to run the flamelet solve just to learn its
+    own domain size.
 
-    File order (matches eqn_idx for model_eqns=2, num_fluids=1, chemistry=T, skipping the
-    mom%end slot that @:HardcodedReadValues() always zeros):
+    Returns
+    -------
+    stream_coord : ndarray (nx,), streamwise cell centres (MFC x)
+    cross_coord  : ndarray (ny,), cross-stream cell centres (MFC y)
+    grid : dict, m/x_domain/n/y_domain for case.py's case dict
+    """
+
+    def _axis(lo_mult, hi_mult, points_per):
+        lo = lo_mult * vort_thickness
+        hi = hi_mult * vort_thickness
+        dx = vort_thickness / points_per
+        # weno_order=5 needs m+1 (or n+1) >= num_stcls_min*weno_order (25).
+        num = max(int(round((hi - lo) / dx)), 32)
+        coord = lo + (np.arange(num) + 0.5) * dx
+        return coord, lo, dx, num
+
+    stream_coord, stream_lo, stream_dx, num_x = _axis(stream_min, stream_max, points_per_stream)
+    cross_coord, cross_lo, cross_dx, num_y = _axis(cross_min, cross_max, points_per_cross)
+
+    grid = {
+        "m": num_x - 1,
+        "x_domain_beg": float(stream_lo),
+        "x_domain_end": float(stream_lo + num_x * stream_dx),
+        "n": num_y - 1,
+        "y_domain_beg": float(cross_lo),
+        "y_domain_end": float(cross_lo + num_y * cross_dx),
+    }
+    return stream_coord, cross_coord, grid
+
+
+def write_hcid274_ic(output_dir, stream_coord, cross_coord, density, streamwise_velocity, pressure, mass_fractions, file_extension="000000"):
+    """Write hcid=274 IC text files: prim.<n>.00.<ext>.dat, one `x y value` triple per
+    line, x-major order (outer loop streamwise/x, inner loop cross-stream/y). This is a
+    genuinely full 2D field -- no extrusion, no zeroed/repurposed component, all
+    sys_size variables written directly in eqn_idx order:
         1: density (alpha_rho(1))
-        2: mom%beg slot, REPURPOSED to carry the streamwise-velocity profile
-        3: pressure
-        4: alpha(1) = 1
-        5..4+Ns: species mass fractions, Cantera species order
+        2: streamwise velocity (mom%beg, MFC x-velocity)
+        3: cross-stream velocity (mom%end, MFC y-velocity) -- 0 everywhere at t=0
+        4: pressure
+        5: alpha(1) = 1
+        6..5+Ns: species mass fractions, Cantera species order
+
+    The cross-stream profile is uniform along the streamwise axis at t=0 (the flow only
+    develops streamwise variation once the simulation -- inflow BC + spatial_bf forcing --
+    starts evolving it).
     """
     os.makedirs(output_dir, exist_ok=True)
     num_species = mass_fractions.shape[0]
 
-    columns = [density, streamwise_velocity, pressure, np.ones_like(density)]
+    columns = [density, streamwise_velocity, np.zeros_like(density), pressure, np.ones_like(density)]
     columns += [mass_fractions[k] for k in range(num_species)]
 
     for n, values in enumerate(columns, start=1):
         path = os.path.join(output_dir, f"prim.{n}.00.{file_extension}.dat")
         with open(path, "w") as fh:
-            for x, v in zip(cross_coord, values):
-                fh.write(f"{float(x)!r} {float(v)!r}\n")
+            for x in stream_coord:
+                for y, v in zip(cross_coord, values):
+                    fh.write(f"{float(x)!r} {float(y)!r} {float(v)!r}\n")
 
     return len(columns)
 
 
-def generate_ic_files(
-    *, output_dir, sol, pyro_gas, cross_coord, pressure, temperature_ox, temperature_fu, fuel, mole_fraction_ox, mole_fraction_fu, vort_thickness, mach_c, num_iter, cold, file_extension="000000"
+def generate_ic_files_spatial(
+    *,
+    output_dir,
+    sol,
+    pyro_gas,
+    stream_coord,
+    cross_coord,
+    pressure,
+    temperature_ox,
+    temperature_fu,
+    fuel,
+    mole_fraction_ox,
+    mole_fraction_fu,
+    vort_thickness,
+    mach_ox,
+    mach_fu,
+    num_iter,
+    cold,
+    file_extension="000000",
 ):
-    """Run the flamelet solve (expensive when cold=False) and write hcid=273 IC
-    files on `cross_coord` (from `compute_grid`, so the file spacing exactly matches
-    the grid case.py declares).
+    """Run the flamelet solve (expensive when cold=False) and write hcid=274 IC files.
+    The t=0 field is still purely a cross-stream profile, uniform along the streamwise
+    axis -- it only develops streamwise variation once simulation starts evolving it
+    via the inflow BC (bc_x%beg=-17) and spatial_bf forcing.
 
     All Cantera/JAX/Pyrometheus stdout diagnostics are redirected to stderr: case.py's
     contract requires its entire stdout to be exactly one JSON line.
@@ -429,7 +459,8 @@ def generate_ic_files(
             mole_fraction_ox,
             mole_fraction_fu,
             vort_thickness,
-            mach_c,
+            mach_ox,
+            mach_fu,
         )
 
         sim_fields = create_simulation_fields(
@@ -453,6 +484,6 @@ def generate_ic_files(
         mass_fractions_1d = np.array(sim_fields.mass_fractions)
         density_1d = np.array(pyro_gas.get_density(pressure_1d, temperature_1d, mass_fractions_1d))
 
-        write_hcid_ic(output_dir, cross_coord, density_1d, velocity_1d, pressure_1d, mass_fractions_1d, file_extension=file_extension)
+        write_hcid274_ic(output_dir, stream_coord, cross_coord, density_1d, velocity_1d, pressure_1d, mass_fractions_1d, file_extension=file_extension)
 
-        print(f"[flamelet_ic] Wrote IC to {output_dir}: " f"nx={len(cross_coord)}, T_max={temperature_1d.max():.1f} K")
+        print(f"[flamelet_ic] Wrote spatial IC to {output_dir}: " f"nx={len(stream_coord)}, ny={len(cross_coord)}, T_max={temperature_1d.max():.1f} K")

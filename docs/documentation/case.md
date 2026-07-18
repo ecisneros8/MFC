@@ -276,6 +276,12 @@ The code provides three pre-built patches for dimensional extrusion of initial c
   `examples/2D_reacting_mixing_layer` to give a temporally-evolving mixing layer a nonzero
   mean streamwise velocity along the extruded axis, which `case(270)` cannot represent since
   it always zeros that component.
+- `case(274)`: Load a full 2D `(x, y)` field with no extrusion -- one data file per variable,
+  `(m_glb+1)*(n_glb+1)` lines each in x-major order, covering all primitive variables
+  directly (unlike `case(270)`/`case(273)`, no component is zeroed or repurposed). Used by
+  `examples/2D_spatial_reacting_mixing_layer` for a spatially-evolving mixing layer, where
+  the cross-stream profile must vary with the streamwise coordinate too (via the
+  `bf_spatial_support` body force) so no single extrusion axis applies.
 
 Setup: Only requires specifying `files_dir` and filename pattern via `file_extension`. The files are located, for example, at `examples/1D_flamelet/IC`, and their format is `prim.XX.YY.file_extension.dat`.
 Implementation: All variables and file handling are managed in the `case.py` file of the simulation.

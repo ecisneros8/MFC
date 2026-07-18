@@ -50,6 +50,17 @@
     character(len=20)                       :: file_num_str                      !< For storing the file number as a string
     integer                                 :: ios
     integer                                 :: ios2
+
+    ! hcid=274 (2dHardcodedIC.fpp): full 2D field from external data, no extrusion.
+    ! Declared here (not in Hardcoded2DVariables()) so it's visible wherever
+    ! HardcodedDeallocation() is called, matching the pattern of stored_values/x_coords/
+    ! y_coords/files_loaded above.
+    real(wp), allocatable, dimension(:,:,:) :: stored_values274
+    logical                                 :: files_loaded274 = .false.
+    integer                                 :: f274, ix274, iy274, unit274, ios274, ix_idx274, iy_idx274
+    character(len=300)                      :: fname274
+    character(len=20)                       :: file_num_str274
+    real(wp)                                :: dummy_x274, dummy_y274, x0_274, y0_274, x_step274, y_step274
 #:enddef
 
 #:def HardcodedReadValues()
@@ -208,4 +219,10 @@
     end if
 
     files_loaded = .false.
+
+    if (allocated(stored_values274)) then
+        @:DEALLOCATE(stored_values274)
+    end if
+
+    files_loaded274 = .false.
 #:enddef

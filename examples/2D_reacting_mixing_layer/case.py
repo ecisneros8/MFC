@@ -51,7 +51,7 @@ cross_coord, grid = flamelet_ic.compute_grid(vort_thickness, cross_min, cross_ma
 fluid = flamelet_ic.reference_fluid_properties(sol, temperature_ox, pressure, mole_fraction_ox)
 
 ic_dir = os.path.join(current_dir, "IC")
-if not (os.path.isdir(ic_dir) and os.listdir(ic_dir)):
+if not flamelet_ic.ic_cache_valid(ic_dir, "000000", len(cross_coord)):
     import jax.numpy as jnp
     from pyrometheus.codegen.python import PythonCodeGenerator
     from pyrometheus.flamelets.make_pyro import make_pyro_object
